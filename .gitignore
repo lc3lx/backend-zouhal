@@ -1,0 +1,21 @@
+node_modules/
+
+# Environment files
+.env
+.env.*
+
+# Editor directories
+.vscode/
+
+# Uploads (images, etc.)
+uploads/
+
+# Logs
+npm-debug.log
+yarn-error.log
+
+# macOS
+.DS_Store
+
+# Optional: lockfile (uncomment if you want to ignore it)
+# package-lock.json
