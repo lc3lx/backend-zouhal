@@ -6,11 +6,16 @@ const {
   createOffer,
   updateOffer,
   deleteOffer,
+  resizeImage,
   toggleOfferStatus,
 } = require("../services/offerService");
 const { protect, allowedTo } = require("../services/authService");
 const { uploadSingleImage } = require("../middlewares/uploadImageMiddleware");
-const { resizeImage } = require("../utils/resizeImage");
+const {
+  createOfferValidator,
+  updateOfferValidator,
+} = require("../utils/validators/offerValidator");
+const validationMiddleware = require("../middlewares/validatorMiddleware");
 
 const router = express.Router();
 
@@ -25,14 +30,18 @@ router.use(protect, allowedTo("admin"));
 router.post(
   "/",
   uploadSingleImage("image"),
-  resizeImage("offers"),
+  resizeImage,
+  createOfferValidator,
+  validationMiddleware,
   createOffer
 );
 
 router.put(
   "/:id",
   uploadSingleImage("image"),
-  resizeImage("offers"),
+  resizeImage,
+  updateOfferValidator,
+  validationMiddleware,
   updateOffer
 );
 

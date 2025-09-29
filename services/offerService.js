@@ -1,7 +1,40 @@
 const Offer = require("../models/offerModel");
 const ApiError = require("../utils/apiError");
-const { asyncHandler } = require("./handlersFactory");
+const asyncHandler = require("express-async-handler");
+const sharp = require("sharp");
+const { v4: uuidv4 } = require("uuid");
+const fs = require("fs");
+const path = require("path");
 
+exports.resizeImage = asyncHandler(async (req, res, next) => {
+  if (!req.file) return next();
+
+  const filename = `offer-${uuidv4()}-${Date.now()}.jpeg`;
+
+  try {
+    // Create uploads/offers directory if it doesn't exist
+    const uploadDir = path.join(__dirname, "../uploads/offers");
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    await sharp(req.file.buffer)
+      .resize(600, 600, {
+        fit: "cover",
+        position: "center",
+      })
+      .toFormat("jpeg")
+      .jpeg({ quality: 95 })
+      .toFile(path.join(uploadDir, filename));
+
+    // Save image into our db
+    req.body.image = filename;
+  } catch (error) {
+    return next(new ApiError("Error processing image", 500));
+  }
+
+  next();
+});
 // @desc    Get all offers
 // @route   GET /api/v1/offers
 // @access  Public
@@ -101,14 +134,28 @@ exports.createOffer = asyncHandler(async (req, res, next) => {
 exports.updateOffer = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
 
+  // Get the existing offer to check for old image
+  const existingOffer = await Offer.findById(id);
+  if (!existingOffer) {
+    return next(new ApiError(`No offer found for this id ${id}`, 404));
+  }
+
+  // If updating with new image, delete old image
+  if (req.body.image && existingOffer.image) {
+    const oldImagePath = path.join(
+      __dirname,
+      "../uploads/offers",
+      existingOffer.image
+    );
+    if (fs.existsSync(oldImagePath)) {
+      fs.unlinkSync(oldImagePath);
+    }
+  }
+
   const offer = await Offer.findByIdAndUpdate(id, req.body, {
     new: true,
     runValidators: true,
   });
-
-  if (!offer) {
-    return next(new ApiError(`No offer found for this id ${id}`, 404));
-  }
 
   res.status(200).json({
     status: "success",
@@ -122,11 +169,21 @@ exports.updateOffer = asyncHandler(async (req, res, next) => {
 exports.deleteOffer = asyncHandler(async (req, res, next) => {
   const { id } = req.params;
 
-  const offer = await Offer.findByIdAndDelete(id);
+  const offer = await Offer.findById(id);
 
   if (!offer) {
     return next(new ApiError(`No offer found for this id ${id}`, 404));
   }
+
+  // Delete associated image file
+  if (offer.image) {
+    const imagePath = path.join(__dirname, "../uploads/offers", offer.image);
+    if (fs.existsSync(imagePath)) {
+      fs.unlinkSync(imagePath);
+    }
+  }
+
+  await Offer.findByIdAndDelete(id);
 
   res.status(204).json({
     status: "success",
