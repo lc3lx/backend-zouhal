@@ -1,0 +1,44 @@
+{
+  "folders": [
+	{
+		"path": ".."
+	},
+	{
+		"path": "../../frontapp"
+	},
+	{
+		"path": "../../frontendweb"
+	}
+],
+  "settings": {
+    "ColorfulMonorepo.workspaces.collection": [
+      {
+        "path": "d:\\work\\zouhal\\backend",
+        "packageName": "nodejs-ecommerce-api-v1",
+        "label": "🌱  nodejs-ecommerce-api-v1",
+        "foreground": "#ffffff",
+        "background": "#112a9d"
+      },
+      {
+        "path": "d:\\work\\zouhal\\frontapp",
+        "packageName": "frontapp",
+        "label": "frontapp",
+        "foreground": "#000000",
+        "background": "#a5a984"
+      },
+      {
+        "path": "d:\\work\\zouhal\\frontendweb",
+        "packageName": "frontendweb",
+        "label": "frontendweb",
+        "foreground": "#ffffff",
+        "background": "#968693"
+      }
+    ],
+    "workbench.colorCustomizations": {
+      "statusBar.background": "#112a9d",
+      "statusBar.foreground": "#ffffff",
+      "tab.activeBorder": "#112a9d",
+      "sideBarTitle.foreground": "#112a9d"
+    }
+  }
+}

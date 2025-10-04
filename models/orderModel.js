@@ -33,12 +33,16 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    deliveryFee: {
+      type: Number,
+      default: 0, // 2 USD for cash on delivery
+    },
     totalOrderPrice: {
       type: Number,
     },
     paymentMethodType: {
       type: String,
-      enum: ["card", "cash", "shamcash"],
+      enum: ["card", "cash", "shamcash", "wallet"],
       default: "cash",
     },
     shamCashDetails: {

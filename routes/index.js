@@ -11,6 +11,8 @@ const couponRoute = require("./couponRoute");
 const cartRoute = require("./cartRoute");
 const orderRoute = require("./orderRoute");
 const offerRoute = require("./offerRoute");
+const walletRoute = require("./walletRoute");
+const rechargeCodeRoute = require("./rechargeCodeRoute");
 
 const mountRoutes = (app) => {
   app.use("/api/v1/categories", categoryRoute);
@@ -26,6 +28,8 @@ const mountRoutes = (app) => {
   app.use("/api/v1/cart", cartRoute);
   app.use("/api/v1/orders", orderRoute);
   app.use("/api/v1/offers", offerRoute);
+  app.use("/api/v1/wallet", walletRoute);
+  app.use("/api/v1/recharge-codes", rechargeCodeRoute);
 };
 
 module.exports = mountRoutes;

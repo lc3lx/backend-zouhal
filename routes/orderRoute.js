@@ -2,6 +2,7 @@ const express = require("express");
 const {
   createCashOrder,
   createShamCashOrder,
+  createWalletOrder,
   approveShamCashPayment,
   rejectShamCashPayment,
   getPendingShamCashPayments,
@@ -31,6 +32,11 @@ router.route("/:cartId").post(authService.allowedTo("user"), createCashOrder);
 router
   .route("/shamcash/:cartId")
   .post(authService.allowedTo("user"), createShamCashOrder);
+
+// Wallet payment route
+router
+  .route("/wallet/:cartId")
+  .post(authService.allowedTo("user"), createWalletOrder);
 router.get(
   "/shamcash/pending",
   authService.allowedTo("admin", "manager"),

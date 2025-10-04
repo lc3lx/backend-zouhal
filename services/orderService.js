@@ -7,6 +7,7 @@ const User = require("../models/userModel");
 const Product = require("../models/productModel");
 const Cart = require("../models/cartModel");
 const Order = require("../models/orderModel");
+const Wallet = require("../models/walletModel");
 
 // @desc    create cash order
 // @route   POST /api/v1/orders/cartId
@@ -15,6 +16,7 @@ exports.createCashOrder = asyncHandler(async (req, res, next) => {
   // app settings
   const taxPrice = 0;
   const shippingPrice = 0;
+  const deliveryFee = 2; // 2 USD delivery fee for cash on delivery
 
   // 1) Get cart depend on cartId
   const cart = await Cart.findById(req.params.cartId);
@@ -29,7 +31,7 @@ exports.createCashOrder = asyncHandler(async (req, res, next) => {
     ? cart.totalPriceAfterDiscount
     : cart.totalCartPrice;
 
-  const totalOrderPrice = cartPrice + taxPrice + shippingPrice;
+  const totalOrderPrice = cartPrice + taxPrice + shippingPrice + deliveryFee;
 
   // 3) Create order with default paymentMethodType cash
   const order = await Order.create({
@@ -37,6 +39,8 @@ exports.createCashOrder = asyncHandler(async (req, res, next) => {
     cartItems: cart.cartItems,
     shippingAddress: req.body.shippingAddress,
     totalOrderPrice,
+    deliveryFee,
+    paymentMethodType: "cash",
   });
 
   // 4) After creating order, decrement product quantity, increment product sold
@@ -53,7 +57,11 @@ exports.createCashOrder = asyncHandler(async (req, res, next) => {
     await Cart.findByIdAndDelete(req.params.cartId);
   }
 
-  res.status(201).json({ status: "success", data: order });
+  res.status(201).json({
+    status: "success",
+    message: "تم إنشاء الطلب بنجاح. رسوم التوصيل: 2 دولار",
+    data: order,
+  });
 });
 
 // @desc    create ShamCash order
@@ -74,6 +82,7 @@ exports.createShamCashOrder = asyncHandler(async (req, res, next) => {
   // app settings
   const taxPrice = 0;
   const shippingPrice = 0;
+  const deliveryFee = 0; // No delivery fee for ShamCash
 
   // 1) Get cart depend on cartId
   const cart = await Cart.findById(req.params.cartId);
@@ -88,7 +97,7 @@ exports.createShamCashOrder = asyncHandler(async (req, res, next) => {
     ? cart.totalPriceAfterDiscount
     : cart.totalCartPrice;
 
-  const totalOrderPrice = cartPrice + taxPrice + shippingPrice;
+  const totalOrderPrice = cartPrice + taxPrice + shippingPrice + deliveryFee;
 
   // 3) Create order with ShamCash payment method
   const order = await Order.create({
@@ -96,6 +105,7 @@ exports.createShamCashOrder = asyncHandler(async (req, res, next) => {
     cartItems: cart.cartItems,
     shippingAddress: req.body.shippingAddress,
     totalOrderPrice,
+    deliveryFee,
     paymentMethodType: "shamcash",
     shamCashDetails: {
       phoneNumber,
@@ -122,6 +132,92 @@ exports.createShamCashOrder = asyncHandler(async (req, res, next) => {
   res.status(201).json({
     status: "success",
     message: "تم إرسال طلب الدفع عبر شام كاش. في انتظار موافقة الإدارة.",
+    data: order,
+  });
+});
+
+// @desc    create wallet order
+// @route   POST /api/v1/orders/wallet/:cartId
+// @access  Protected/User
+exports.createWalletOrder = asyncHandler(async (req, res, next) => {
+  // app settings
+  const taxPrice = 0;
+  const shippingPrice = 0;
+  const deliveryFee = 0; // No delivery fee for wallet payment
+
+  // 1) Get cart depend on cartId
+  const cart = await Cart.findById(req.params.cartId);
+  if (!cart) {
+    return next(
+      new ApiError(`There is no such cart with id ${req.params.cartId}`, 404)
+    );
+  }
+
+  // 2) Get order price depend on cart price "Check if coupon apply"
+  const cartPrice = cart.totalPriceAfterDiscount
+    ? cart.totalPriceAfterDiscount
+    : cart.totalCartPrice;
+
+  const totalOrderPrice = cartPrice + taxPrice + shippingPrice + deliveryFee;
+
+  // 3) Get user wallet
+  const wallet = await Wallet.findOne({ user: req.user._id });
+  if (!wallet) {
+    return next(
+      new ApiError(
+        "لم يتم العثور على محفظة لهذا المستخدم. يرجى إنشاء محفظة أولاً",
+        404
+      )
+    );
+  }
+
+  // 4) Check if wallet has sufficient balance
+  if (!wallet.hasSufficientBalance(totalOrderPrice)) {
+    return next(
+      new ApiError(
+        `رصيد المحفظة غير كافٍ. الرصيد الحالي: ${wallet.balance} دولار، المبلغ المطلوب: ${totalOrderPrice} دولار`,
+        400
+      )
+    );
+  }
+
+  // 5) Create order with wallet payment method
+  const order = await Order.create({
+    user: req.user._id,
+    cartItems: cart.cartItems,
+    shippingAddress: req.body.shippingAddress,
+    totalOrderPrice,
+    deliveryFee,
+    paymentMethodType: "wallet",
+    isPaid: true,
+    paidAt: Date.now(),
+  });
+
+  // 6) After creating order, decrement product quantity, increment product sold
+  if (order) {
+    const bulkOption = cart.cartItems.map((item) => ({
+      updateOne: {
+        filter: { _id: item.product },
+        update: { $inc: { quantity: -item.quantity, sold: +item.quantity } },
+      },
+    }));
+    await Product.bulkWrite(bulkOption, {});
+
+    // 7) Deduct amount from wallet
+    await wallet.addTransaction(
+      "debit",
+      totalOrderPrice,
+      `Payment for order #${order._id}`,
+      order._id
+    );
+
+    // 8) Clear cart depend on cartId
+    await Cart.findByIdAndDelete(req.params.cartId);
+  }
+
+  res.status(201).json({
+    status: "success",
+    message: "تم إنشاء الطلب ودفع المبلغ من المحفظة بنجاح",
     data: order,
   });
 });
@@ -276,6 +372,7 @@ exports.checkoutSession = asyncHandler(async (req, res, next) => {
   // app settings
   const taxPrice = 0;
   const shippingPrice = 0;
+  const deliveryFee = 0; // No delivery fee for card payment
 
   // 1) Get cart depend on cartId
   const cart = await Cart.findById(req.params.cartId);
@@ -290,7 +387,7 @@ exports.checkoutSession = asyncHandler(async (req, res, next) => {
     ? cart.totalPriceAfterDiscount
     : cart.totalCartPrice;
 
-  const totalOrderPrice = cartPrice + taxPrice + shippingPrice;
+  const totalOrderPrice = cartPrice + taxPrice + shippingPrice + deliveryFee;
 
   // 3) Create stripe checkout session
   const session = await stripe.checkout.sessions.create({
@@ -328,6 +425,7 @@ const createCardOrder = async (session) => {
     cartItems: cart.cartItems,
     shippingAddress,
     totalOrderPrice: oderPrice,
+    deliveryFee: 0, // No delivery fee for card payment
     isPaid: true,
     paidAt: Date.now(),
     paymentMethodType: "card",
