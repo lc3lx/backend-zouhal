@@ -60,14 +60,19 @@ exports.rechargeWallet = asyncHandler(async (req, res, next) => {
     return next(new ApiError("Invalid recharge code", 400));
   }
 
-  // Check if code is valid
-  if (!rechargeCode.isValid()) {
-    if (rechargeCode.isUsed) {
-      return next(new ApiError("This code has already been used", 400));
-    }
-    if (rechargeCode.isExpired()) {
-      return next(new ApiError("This code has expired", 400));
-    }
+  // Check if code has already been used
+  if (rechargeCode.isUsed) {
+    return next(
+      new ApiError(
+        "This recharge code has already been used and cannot be used again",
+        400
+      )
+    );
+  }
+
+  // Check if code is expired
+  if (rechargeCode.isExpired()) {
+    return next(new ApiError("This recharge code has expired", 400));
   }
 
   // Get user wallet
@@ -76,6 +81,16 @@ exports.rechargeWallet = asyncHandler(async (req, res, next) => {
     // Create wallet if it doesn't exist
     wallet = await Wallet.create({ user: req.user._id });
     await User.findByIdAndUpdate(req.user._id, { wallet: wallet._id });
+  }
+
+  // Double-check that code hasn't been used before attempting to use it
+  if (rechargeCode.isUsed) {
+    return next(
+      new ApiError(
+        "This recharge code has already been used and cannot be used again",
+        400
+      )
+    );
   }
 
   // Use the recharge code

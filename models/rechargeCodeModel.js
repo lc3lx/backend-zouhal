@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const { v4: uuidv4 } = require("uuid");
 
+// كل كود شحن يمكن استخدامه مرة واحدة فقط
 const rechargeCodeSchema = new mongoose.Schema(
   {
     code: {
@@ -50,15 +51,27 @@ rechargeCodeSchema.methods.isExpired = function () {
   return new Date() > this.expiresAt;
 };
 
-// Check if code is valid
-rechargeCodeSchema.methods.isValid = function () {
+// Check if code is valid for a specific user
+rechargeCodeSchema.methods.isValidForUser = function (userId) {
+  // الكود يمكن استخدامه مرة واحدة فقط بواسطة أي مستخدم
   return !this.isUsed && !this.isExpired();
 };
 
-// Use the recharge code
+// Check if code is valid (backward compatibility)
+rechargeCodeSchema.methods.isValid = function () {
+  return this.isValidForUser();
+};
+
+// Use the recharge code (يمكن استخدامه مرة واحدة فقط)
 rechargeCodeSchema.methods.useCode = async function (userId) {
-  if (!this.isValid()) {
-    throw new Error("Code is invalid or expired");
+  if (this.isUsed) {
+    throw new Error(
+      "This recharge code has already been used and cannot be used again"
+    );
+  }
+
+  if (this.isExpired()) {
+    throw new Error("This recharge code has expired");
   }
 
   this.usedBy = userId;
@@ -79,7 +92,7 @@ rechargeCodeSchema.statics.generateCodes = async function (
 ) {
   const codes = [];
 
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < count; i += 1) {
     const expiresAt = new Date(
       Date.now() + expiresInDays * 24 * 60 * 60 * 1000
     );
