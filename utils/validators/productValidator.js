@@ -73,8 +73,14 @@ exports.createProductValidator = [
 
   check('subcategories')
     .optional()
+    .isArray()
+    .withMessage('Subcategories must be an array of IDs'),
+  check('subcategories.*')
+    .optional()
     .isMongoId()
-    .withMessage('Invalid ID formate')
+    .withMessage('Invalid ID formate'),
+  body('subcategories')
+    .optional()
     .custom((subcategoriesIds) =>
       SubCategory.find({ _id: { $exists: true, $in: subcategoriesIds } }).then(
         (result) => {
