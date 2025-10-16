@@ -49,6 +49,17 @@ exports.createProductValidator = [
 
   check('colors')
     .optional()
+    .customSanitizer((val) => {
+      if (typeof val === 'string') {
+        try {
+          const parsed = JSON.parse(val);
+          return parsed;
+        } catch (e) {
+          return [val];
+        }
+      }
+      return val;
+    })
     .isArray()
     .withMessage('availableColors should be array of string'),
   check('imageCover').notEmpty().withMessage('Product imageCover is required'),
@@ -73,6 +84,17 @@ exports.createProductValidator = [
 
   check('subcategories')
     .optional()
+    .customSanitizer((val) => {
+      if (typeof val === 'string') {
+        try {
+          const parsed = JSON.parse(val);
+          return parsed;
+        } catch (e) {
+          return [val];
+        }
+      }
+      return val;
+    })
     .isArray()
     .withMessage('Subcategories must be an array of IDs'),
   check('subcategories.*')
@@ -81,32 +103,42 @@ exports.createProductValidator = [
     .withMessage('Invalid ID formate'),
   body('subcategories')
     .optional()
-    .custom((subcategoriesIds) =>
-      SubCategory.find({ _id: { $exists: true, $in: subcategoriesIds } }).then(
+    .custom((subcategoriesIds) => {
+      let arr = subcategoriesIds;
+      if (typeof arr === 'string') {
+        try { arr = JSON.parse(arr); } catch (e) { arr = [arr]; }
+      }
+      if (!Array.isArray(arr)) arr = [];
+      return SubCategory.find({ _id: { $exists: true, $in: arr } }).then(
         (result) => {
-          if (result.length < 1 || result.length !== subcategoriesIds.length) {
+          if (arr.length > 0 && (result.length < 1 || result.length !== arr.length)) {
             return Promise.reject(new Error(`Invalid subcategories Ids`));
           }
         }
       )
-    )
-    .custom((val, { req }) =>
-      SubCategory.find({ category: req.body.category }).then(
+    })
+    .custom((val, { req }) => {
+      let target = val;
+      if (typeof target === 'string') {
+        try { target = JSON.parse(target); } catch (e) { target = [target]; }
+      }
+      if (!Array.isArray(target) || target.length === 0) return true;
+      return SubCategory.find({ category: req.body.category }).then(
         (subcategories) => {
           const subCategoriesIdsInDB = [];
           subcategories.forEach((subCategory) => {
             subCategoriesIdsInDB.push(subCategory._id.toString());
           });
           // check if subcategories ids in db include subcategories in req.body (true)
-          const checker = (target, arr) => target.every((v) => arr.includes(v));
-          if (!checker(val, subCategoriesIdsInDB)) {
+          const checker = (t, arr) => t.every((v) => arr.includes(v));
+          if (!checker(target, subCategoriesIdsInDB)) {
             return Promise.reject(
               new Error(`subcategories not belong to category`)
             );
           }
         }
       )
-    ),
+    }),
 
   check('brand').optional().isMongoId().withMessage('Invalid ID formate'),
   check('ratingsAverage')
