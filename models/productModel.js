@@ -121,7 +121,7 @@ const setImageURL = (doc) => {
     const isAbsolute = /^(http|https):\/\//i.test(doc.imageCover);
     doc.imageCover = isAbsolute
       ? doc.imageCover
-      : `${process.env.BASE_URL}/products/${doc.imageCover}`;
+      : `${process.env.BASE_URL}/uploads/products/${doc.imageCover}`;
   }
   if (doc.images) {
     const imagesList = [];
@@ -129,7 +129,7 @@ const setImageURL = (doc) => {
       const isAbsolute = /^(http|https):\/\//i.test(image);
       const imageUrl = isAbsolute
         ? image
-        : `${process.env.BASE_URL}/products/${image}`;
+        : `${process.env.BASE_URL}/uploads/products/${image}`;
       imagesList.push(imageUrl);
     });
     doc.images = imagesList;
@@ -141,7 +141,7 @@ const setImageURL = (doc) => {
       if (variant.images && Array.isArray(variant.images)) {
         variant.images = variant.images.map((img) => {
           const isAbsolute = /^(http|https):\/\//i.test(img);
-          return isAbsolute ? img : `${process.env.BASE_URL}/products/${img}`;
+          return isAbsolute ? img : `${process.env.BASE_URL}/uploads/products/${img}`;
         });
       }
       return variant;
