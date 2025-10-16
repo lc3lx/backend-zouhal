@@ -19,22 +19,42 @@ const calcTotalCartPrice = (cart) => {
 // @route   POST /api/v1/cart
 // @access  Private/User
 exports.addProductToCart = asyncHandler(async (req, res, next) => {
-  const { productId, color } = req.body;
+  const { productId, color, size } = req.body;
   const product = await Product.findById(productId);
 
   // 1) Get Cart for logged user
   let cart = await Cart.findOne({ user: req.user._id });
 
+  // Determine unit price with variant support
+  let unitPrice = product.price;
+  if (product && Array.isArray(product.variants) && color) {
+    const v = product.variants.find(
+      (x) =>
+        (x?.color?.name && x.color.name.toLowerCase() === String(color).toLowerCase()) ||
+        (x?.color?.hex && x.color.hex.toLowerCase() === String(color).toLowerCase())
+    );
+    if (v && typeof v.price === 'number') {
+      unitPrice = v.price;
+    } else if (typeof product.priceAfterDiscount === 'number') {
+      unitPrice = product.priceAfterDiscount;
+    }
+  } else if (typeof product.priceAfterDiscount === 'number') {
+    unitPrice = product.priceAfterDiscount;
+  }
+
   if (!cart) {
     // create cart fot logged user with product
     cart = await Cart.create({
       user: req.user._id,
-      cartItems: [{ product: productId, color, price: product.price }],
+      cartItems: [{ product: productId, color, size, price: unitPrice }],
     });
   } else {
     // product exist in cart, update product quantity
     const productIndex = cart.cartItems.findIndex(
-      (item) => item.product.toString() === productId && item.color === color
+      (item) =>
+        item.product.toString() === productId &&
+        item.color === color &&
+        (item.size || '') === (size || '')
     );
 
     if (productIndex > -1) {
@@ -44,7 +64,7 @@ exports.addProductToCart = asyncHandler(async (req, res, next) => {
       cart.cartItems[productIndex] = cartItem;
     } else {
       // product not exist in cart,  push product to cartItems array
-      cart.cartItems.push({ product: productId, color, price: product.price });
+      cart.cartItems.push({ product: productId, color, size, price: unitPrice });
     }
   }
 

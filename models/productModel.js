@@ -38,6 +38,25 @@ const productSchema = new mongoose.Schema(
     },
     colors: [String],
 
+    // Product variants: each color may have its own images and sizes with stock
+    variants: [
+      {
+        color: {
+          name: { type: String, trim: true },
+          hex: { type: String, trim: true },
+        },
+        images: [String],
+        sizes: [
+          {
+            label: { type: String, trim: true },
+            stock: { type: Number, default: 0 },
+          },
+        ],
+        sku: { type: String, trim: true },
+        price: { type: Number },
+      },
+    ],
+
     imageCover: {
       type: String,
       required: [true, "Product Image cover is required"],
@@ -99,16 +118,34 @@ productSchema.pre(/^find/, function (next) {
 
 const setImageURL = (doc) => {
   if (doc.imageCover) {
-    const imageUrl = `${process.env.BASE_URL}/products/${doc.imageCover}`;
-    doc.imageCover = imageUrl;
+    const isAbsolute = /^(http|https):\/\//i.test(doc.imageCover);
+    doc.imageCover = isAbsolute
+      ? doc.imageCover
+      : `${process.env.BASE_URL}/products/${doc.imageCover}`;
   }
   if (doc.images) {
     const imagesList = [];
     doc.images.forEach((image) => {
-      const imageUrl = `${process.env.BASE_URL}/products/${image}`;
+      const isAbsolute = /^(http|https):\/\//i.test(image);
+      const imageUrl = isAbsolute
+        ? image
+        : `${process.env.BASE_URL}/products/${image}`;
       imagesList.push(imageUrl);
     });
     doc.images = imagesList;
+  }
+  // Map variant images to absolute URLs as well
+  if (doc.variants && Array.isArray(doc.variants)) {
+    doc.variants = doc.variants.map((v) => {
+      const variant = v.toObject ? v.toObject() : { ...v };
+      if (variant.images && Array.isArray(variant.images)) {
+        variant.images = variant.images.map((img) => {
+          const isAbsolute = /^(http|https):\/\//i.test(img);
+          return isAbsolute ? img : `${process.env.BASE_URL}/products/${img}`;
+        });
+      }
+      return variant;
+    });
   }
 };
 // findOne, findAll and update

@@ -22,3 +22,6 @@ exports.uploadSingleImage = (fieldName) => multerOptions().single(fieldName);
 
 exports.uploadMixOfImages = (arrayOfFields) =>
   multerOptions().fields(arrayOfFields);
+
+// Accept any file fields and later normalize by fieldname in service layer
+exports.uploadAny = () => multerOptions().any();
