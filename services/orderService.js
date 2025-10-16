@@ -317,7 +317,7 @@ exports.findAllOrders = factory.getAll(Order);
 // @desc    Get all orders
 // @route   POST /api/v1/orders
 // @access  Protected/User-Admin-Manager
-exports.findSpecificOrder = factory.getOne(Order);
+exports.findSpecificOrder = factory.getOne(Order, 'user cartItems.product');
 
 // @desc    Update order paid status to paid
 // @route   PUT /api/v1/orders/:id/pay

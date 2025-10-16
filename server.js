@@ -46,16 +46,17 @@ if (process.env.NODE_ENV === "development") {
   console.log(`mode: ${process.env.NODE_ENV}`);
 }
 
-// Limit each IP to 100 requests per `window` (here, per 15 minutes)
+// Rate limiting disabled for development
+// Uncomment and configure for production
+/*
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: 1000, // Increased limit
   message:
-    "Too many accounts created from this IP, please try again after an hour",
+    "Too many requests from this IP, please try again later",
 });
-
-// Apply the rate limiting middleware to all requests
 app.use("/api", limiter);
+*/
 
 // Middleware to protect against HTTP Parameter Pollution attacks
 app.use(
