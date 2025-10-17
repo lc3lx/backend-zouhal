@@ -1,0 +1,26 @@
+# Copy to .env and adjust values
+# Choose ONE path:
+# 1) HF Transformers (no llama): set MODEL_ID
+# 2) llama.cpp (GGUF): set MODEL_PATH
+
+PORT=8000
+
+# HF Transformers (preferred when you have PyTorch installed)
+# Examples:
+#   MODEL_ID=Qwen/Qwen2.5-3B-Instruct
+#   MODEL_ID=Qwen/Qwen2.5-1.5B-Instruct
+MODEL_ID=Qwen/Qwen2.5-3B-Instruct
+HF_DEVICE=auto   # auto|cuda|cpu|mps
+HF_DTYPE=auto    # auto|float16|bfloat16|float32
+
+# llama.cpp fallback (optional)
+MODEL_PATH=C:\\models\\qwen2.5-3b-instruct.Q4_K_S.gguf
+N_CTX=4096
+N_THREADS=8
+N_GPU_LAYERS=0
+
+ZUHALL_BASE=https://www.zuhall.com
+TIMEOUT=10
+TEMP=0.4
+TOP_P=0.9
+MAX_TOKENS=512
