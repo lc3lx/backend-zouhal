@@ -71,7 +71,7 @@ exports.resizeProductImages = asyncHandler(async (req, res, next) => {
       variantImageFiles.map(async (img, index) => {
         const imageName = `product-${uuidv4()}-${Date.now()}-variant-${index + 1}.jpeg`;
         await sharp(img.buffer)
-          .resize(2000, 1333)
+          .resize(600, 600, { fit: 'inside', withoutEnlargement: true })
           .toFormat('jpeg')
           .jpeg({ quality: 95 })
           .toFile(`uploads/products/${imageName}`);
