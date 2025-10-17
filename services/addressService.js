@@ -54,3 +54,24 @@ exports.getLoggedUserAddresses = asyncHandler(async (req, res, next) => {
     data: user.addresses,
   });
 });
+
+// @desc    Get specific address for logged user
+// @route   GET /api/v1/addresses/:addressId
+// @access  Protected/User
+exports.getSpecificAddress = asyncHandler(async (req, res, next) => {
+  const user = await User.findById(req.user._id);
+
+  if (!user || !Array.isArray(user.addresses)) {
+    return res.status(404).json({ status: 'fail', message: 'User addresses not found' });
+  }
+
+  // Find subdocument by id
+  const address = user.addresses.id(req.params.addressId) ||
+                  user.addresses.find((a) => a && String(a._id) === String(req.params.addressId));
+
+  if (!address) {
+    return res.status(404).json({ status: 'fail', message: 'Address not found' });
+  }
+
+  res.status(200).json({ status: 'success', data: address });
+});
