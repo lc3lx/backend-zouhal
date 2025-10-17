@@ -19,7 +19,7 @@ app = Flask(__name__)
 CORS(app)
 
 # إعداد Redis للتخزين المؤقت
-cache = redis.Redis(host=os.getenv('REDIS_HOST', 'localhost'), port=6379, db=0)
+cache = redis.Redis(host=os.getenv('REDIS_HOST', 'localhost'), port=3001, db=0)
 
 # إعدادات النموذج وAPI
 DEFAULT_MODEL = os.getenv('AI_MODEL', 'Qwen/Qwen2.5-14B-Instruct')  # نموذج قوي لأداء خارق
@@ -307,7 +307,7 @@ def api_ai_health():
     })
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', '8000'))
+    port = int(os.getenv('PORT', '3001'))
     logger.info(f"Starting Zuhall AI Sales Assistant on http://127.0.0.1:{port}")
     logger.info(f"Model: {MODEL_NAME}")
     app.run(host='127.0.0.1', port=port, debug=False)
