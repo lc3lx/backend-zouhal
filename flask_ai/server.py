@@ -10,6 +10,8 @@ import redis
 from langdetect import detect
 import requests
 from datetime import datetime
+import re
+import time
 
 # إعداد التسجيل
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -18,32 +20,76 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# إعداد Redis للتخزين المؤقت
-cache = redis.Redis(host=os.getenv('REDIS_HOST', 'localhost'), port=3001, db=0)
+# إعداد Redis للتخزين المؤقت (آمن مع منفذ افتراضي 6379)
+REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
+try:
+    cache = redis.Redis(host=os.getenv('REDIS_HOST', 'localhost'), port=REDIS_PORT, db=0)
+except Exception as e:
+    logger.warning(f"Redis init failed: {e}")
+    cache = None
 
 # إعدادات النموذج وAPI
 DEFAULT_MODEL = os.getenv('AI_MODEL', 'Qwen/Qwen2.5-14B-Instruct')  # نموذج قوي لأداء خارق
 ZUHALL_BASE = os.getenv('ZUHALL_BASE', 'https://www.zuhall.com')
 
-# تحميل النموذج باستخدام 4-bit quantization
+# كاش للمتجر داخل العملية لتقليل نداءات الشبكة
+SHOP_CACHE = None
+SHOP_CACHE_TS = 0.0
+SHOP_CACHE_TTL = int(os.getenv('SHOP_CACHE_TTL', '60'))
+
+# فحص توفر مكتبة bitsandbytes للاستخدام 4-بت
+try:
+    import bitsandbytes as _bnb  # type: ignore
+    HAS_BNB = True
+except Exception:
+    HAS_BNB = False
+
+# تحميل النموذج مع سلال فشل ذكية + 4-بت اختياري على GPU
 def load_model():
     try:
-        device_map = 'auto' if torch.cuda.is_available() else 'cpu'
-        dtype = torch.float16 if device_map != 'cpu' else torch.float32
-        quantization_config = BitsAndBytesConfig(load_in_4bit=True) if device_map != 'cpu' else None
-        
-        logger.info(f"Loading model: {DEFAULT_MODEL} on {device_map}")
-        tokenizer = AutoTokenizer.from_pretrained(DEFAULT_MODEL, use_fast=True)
-        model = AutoModelForCausalLM.from_pretrained(
-            DEFAULT_MODEL,
-            device_map=device_map,
-            torch_dtype=dtype,
-            quantization_config=quantization_config,
-            low_cpu_mem_usage=True,
-        )
-        model.eval()
-        logger.info(f"Model loaded successfully: {DEFAULT_MODEL}")
-        return tokenizer, model
+        use_gpu = torch.cuda.is_available()
+        device_map = 'auto' if use_gpu else 'cpu'
+        dtype = torch.float16 if use_gpu else torch.float32
+        quantization_config = BitsAndBytesConfig(load_in_4bit=True) if (use_gpu and HAS_BNB) else None
+
+        candidates = []
+        env_model = os.getenv('AI_MODEL')
+        if env_model:
+            candidates.append(env_model)
+        if use_gpu:
+            candidates += [
+                'Qwen/Qwen2.5-14B-Instruct',
+                'Qwen/Qwen2.5-7B-Instruct',
+                'Qwen/Qwen2.5-3B-Instruct',
+                'Qwen/Qwen2.5-1.5B-Instruct',
+            ]
+        else:
+            candidates += [
+                os.getenv('AI_MODEL_CPU', 'Qwen/Qwen2.5-1.5B-Instruct'),
+                'Qwen/Qwen2.5-0.5B-Instruct',
+            ]
+
+        last_err = None
+        for mid in candidates:
+            try:
+                logger.info(f"Loading model: {mid} on {device_map} (4-bit={'on' if quantization_config else 'off'})")
+                tok = AutoTokenizer.from_pretrained(mid, use_fast=True)
+                mdl = AutoModelForCausalLM.from_pretrained(
+                    mid,
+                    device_map=device_map,
+                    torch_dtype=dtype,
+                    quantization_config=quantization_config,
+                    low_cpu_mem_usage=True,
+                )
+                mdl.eval()
+                logger.info(f"Model loaded successfully: {mid}")
+                return tok, mdl
+            except Exception as e:
+                last_err = e
+                logger.warning(f"Failed to load model {mid}: {e}")
+                continue
+        logger.error(f"All candidate models failed to load: {last_err}")
+        return None, None
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
         return None, None
@@ -81,14 +127,20 @@ def _fetch_shop_safe(url: str):
         return None
 
 def get_shop_context_zuhall():
-    products = _fetch_shop_safe(f"{ZUHALL_BASE}/api/v1/products?limit=50")  # زيادة الحد لدعم منصة كبيرة
+    global SHOP_CACHE, SHOP_CACHE_TS
+    now = time.time()
+    if SHOP_CACHE and (now - SHOP_CACHE_TS) < SHOP_CACHE_TTL:
+        return SHOP_CACHE
+    products = _fetch_shop_safe(f"{ZUHALL_BASE}/api/v1/products?limit=50")
     categories = _fetch_shop_safe(f"{ZUHALL_BASE}/api/v1/categories?limit=100")
     brands = _fetch_shop_safe(f"{ZUHALL_BASE}/api/v1/brands?limit=100")
-    return {
+    data = {
         "products": products.get("data", []) if isinstance(products, dict) else [],
         "categories": categories.get("data", []) if isinstance(categories, dict) else [],
         "brands": brands.get("data", []) if isinstance(brands, dict) else [],
     }
+    SHOP_CACHE, SHOP_CACHE_TS = data, now
+    return data
 
 # اكتشاف النية والتفضيلات
 def detect_sales_intent(message: str) -> tuple[str, dict]:
@@ -98,8 +150,12 @@ def detect_sales_intent(message: str) -> tuple[str, dict]:
     
     if any(w in m for w in ["ميزانية", "سعر", "كم", "رخيص", "price", "cheap"]):
         intent, preferences["focus"] = "prices", "price"
-        if any(w in m for w in ["100", "200", "300", "400", "500"]):
-            preferences["budget"] = int(m.split()[m.split().index([w for w in m.split() if w.isdigit()][0])])
+        nums = re.findall(r"\d{2,6}", m)
+        if nums:
+            try:
+                preferences["budget"] = int(nums[0])
+            except Exception:
+                pass
     elif any(w in m for w in ["عرض", "عروض", "خصم", "offer", "deals"]):
         intent, preferences["focus"] = "deals", "discount"
     elif any(w in m for w in ["تصنيف", "تصنيفات", "فئات", "category"]):
@@ -143,13 +199,13 @@ def sanitize_response(text: str) -> str:
     return text[:400].rsplit(". ", 1)[0] + "..." if len(text) > 400 else text
 
 # بناء الـ Prompt للمبيعات
-def build_sales_prompt(message: str, ctx: dict):
+def build_sales_prompt(message: str, ctx: dict, system_prompt: str):
     cat_list = ", ".join([c.get('name', '') for c in ctx.get("categories", [])[:10]]) or "غير متاح"
     brand_list = ", ".join([b.get('name', '') for b in ctx.get("brands", [])[:10]]) or "غير متاح"
     prod_lines = [f"- {p.get('title', '')} | السعر: {_price_text(p)}" for p in ctx.get("products", [])[:10]]
     prod_list = "\n".join(prod_lines) or "غير متاح"
 
-    system = ZUHALL_SALES_SYSTEM_PROMPT
+    system = system_prompt
     user = (
         f"سياق المتجر:\n"
         f"التصنيفات: {cat_list}\n"
@@ -164,8 +220,13 @@ def hf_generate_sales(system: str, user: str) -> str:
     if not model or not tokenizer:
         return "فيه مشكلة تقنية، بس أقدر أساعدك! قولي وش تبغى وأرشح لك أفضل الخيارات."
     
-    cache_key = f"sales:{user}"
-    cached = cache.get(cache_key)
+    cache_key = f"sales:{abs(hash(user))}"
+    cached = None
+    if cache:
+        try:
+            cached = cache.get(cache_key)
+        except Exception as e:
+            logger.warning(f"Cache get failed: {e}")
     if cached:
         logger.info("Returning cached response")
         return cached.decode('utf-8')
@@ -191,26 +252,41 @@ def hf_generate_sales(system: str, user: str) -> str:
     input_len = inputs["input_ids"].shape[1]
     text = tokenizer.decode(gen_ids[input_len:], skip_special_tokens=True).strip()
     text = sanitize_response(text)
-    cache.setex(cache_key, 7200, text)  # تخزين لمدة ساعتين
+    if cache:
+        try:
+            cache.setex(cache_key, 7200, text)  # تخزين لمدة ساعتين
+        except Exception as e:
+            logger.warning(f"Cache set failed: {e}")
     return text
 
 # تنسيق رد المبيعات
-def compose_sales_reply(model_text: str, ctx: dict, intent: str, preferences: dict, product_candidates: list) -> str:
-    lines = [sanitize_response(model_text).splitlines()[0].strip() or "هلا! جاهز أساعدك بأفضل المنتجات."]
+def compose_sales_reply(model_text: str, ctx: dict, intent: str, preferences: dict, product_candidates: list, lang: str = 'ar') -> str:
+    opener = sanitize_response(model_text).splitlines()[0].strip()
+    if len(opener) < 3:
+        if lang == 'ar':
+            opener = "هلا! جاهز أساعدك بأفضل المنتجات."
+        else:
+            opener = "Hi! I can help you pick great options."
+    lines = [opener]
     if intent in ("browse", "deals", "prices"):
         picks = _pick_top_products(ctx, 3, product_candidates, preferences.get("budget"))
         if picks:
-            lines.append("إليك أفضل الخيارات:")
+            lines.append("إليك أفضل الخيارات:" if lang == 'ar' else "Here are some top picks:")
             for i, p in enumerate(picks, 1):
-                lines.append(f"{i}) {p.get('title','')} — السعر: {_price_text(p)}")
+                price_txt = _price_text(p)
+                if lang == 'ar':
+                    lines.append(f"{i}) {p.get('title','')} — السعر: {price_txt}")
+                else:
+                    lines.append(f"{i}) {p.get('title','')} — price: {price_txt}")
     elif intent == "categories":
-        lines.append("التصنيفات المتاحة: " + ", ".join([c.get('name','') for c in ctx.get("categories", [])[:8]]))
+        cat_txt = ", ".join([c.get('name','') for c in ctx.get("categories", [])[:8]])
+        lines.append(("التصنيفات المتاحة: " + cat_txt) if lang == 'ar' else ("Available categories: " + cat_txt))
     elif intent == "brands":
-        lines.append("الماركات عندنا: " + ", ".join([b.get('name','') for b in ctx.get("brands", [])[:8]]))
+        br_txt = ", ".join([b.get('name','') for b in ctx.get("brands", [])[:8]])
+        lines.append(("الماركات عندنا: " + br_txt) if lang == 'ar' else ("Available brands: " + br_txt))
     elif intent == "complaint":
-        lines.append("آسفين على أي إزعاج! قولي وش المشكلة بالضبط وأضبّطها لك فوراً.")
-    
-    lines.append(format_sales_closing(intent, preferences))
+        lines.append("آسفين على أي إزعاج! قولي وش المشكلة بالضبط وأضبّطها لك فوراً." if lang == 'ar' else "Sorry for the trouble! Tell me what went wrong and I’ll fix it right away.")
+    lines.append(format_sales_closing(intent, preferences, lang))
     return "\n".join(lines)
 
 def _price_text(p: dict) -> str:
@@ -227,31 +303,53 @@ def _pick_top_products(ctx: dict, n: int, candidates: list, budget: int = None) 
         return p.get("priceAfterDiscount", p.get("price", 10**9))
     return sorted(prods, key=price_of)[:n]
 
-def format_sales_closing(intent: str, preferences: dict) -> str:
-    focus = preferences.get("focus")
-    closings = {
-        "browse": "تحب نركّز على المواصفات، السعر، ولا شي ثاني؟",
-        "deals": "تبغى عروض أكثر ولا نختار فئة معينة؟",
-        "prices": "وش ميزانيتك بالضبط عشان أرشح لك الأفضل؟",
-        "categories": "تبغى أرشح لك منتجات من تصنيف معين؟",
-        "brands": "أي ماركة تفضّل نشوف منتجاتها؟",
-        "complaint": "قلّي وش المشكلة وأحلها لك بسرعة!",
-    }
-    return closings.get(intent, "وش تبغى نشوف لك الحين؟")
+def format_sales_closing(intent: str, preferences: dict, lang: str = 'ar') -> str:
+    if lang == 'ar':
+        closings = {
+            "browse": "تحب نركّز على المواصفات، السعر، ولا شي ثاني؟",
+            "deals": "تبغى عروض أكثر ولا نختار فئة معينة؟",
+            "prices": "وش ميزانيتك بالضبط عشان أرشح لك الأفضل؟",
+            "categories": "تبغى أرشح لك منتجات من تصنيف معين؟",
+            "brands": "أي ماركة تفضّل نشوف منتجاتها؟",
+            "complaint": "قلّي وش المشكلة وأحلها لك بسرعة!",
+        }
+        return closings.get(intent, "وش تبغى نشوف لك الحين؟")
+    else:
+        closings_en = {
+            "browse": "Should we focus on specs, price, or something else?",
+            "deals": "Want more deals or a specific category?",
+            "prices": "What’s your budget so I can tailor the picks?",
+            "categories": "Want me to recommend items from a category?",
+            "brands": "Which brand should we focus on?",
+            "complaint": "Tell me the issue and I’ll sort it out fast!",
+        }
+        return closings_en.get(intent, "What would you like me to show you next?")
 
 # اقتراحات ديناميكية
-def get_dynamic_suggestions(ctx: dict, intent: str) -> list:
+def get_dynamic_suggestions(ctx: dict, intent: str, lang: str = 'ar') -> list:
     suggestions = []
-    if intent == "categories":
-        suggestions = [f"أرني منتجات {c.get('name')}" for c in ctx.get("categories", [])[:3]]
-    elif intent == "browse" or intent == "deals":
-        suggestions = [f"تفاصيل {p.get('title')}" for p in ctx.get("products", [])[:2]]
-        suggestions.append("عروض اليوم")
-    elif intent == "prices":
-        suggestions = ["أرخص المنتجات", "عروض مخفّضة", "منتجات حسب ميزانيتي"]
+    if lang == 'ar':
+        if intent == "categories":
+            suggestions = [f"أرني منتجات {c.get('name')}" for c in ctx.get("categories", [])[:3]]
+        elif intent in ("browse", "deals"):
+            suggestions = [f"تفاصيل {p.get('title')}" for p in ctx.get("products", [])[:2]]
+            suggestions.append("عروض اليوم")
+        elif intent == "prices":
+            suggestions = ["أرخص المنتجات", "عروض مخفّضة", "منتجات حسب ميزانيتي"]
+        else:
+            suggestions = ["أفضل العروض", "تصنيفات المنتجات", "أحدث الماركات"]
+        return suggestions or ["عروض اليوم", "أرني التصنيفات"]
     else:
-        suggestions = ["أفضل العروض", "تصنيفات المنتجات", "أحدث الماركات"]
-    return suggestions or ["عروض اليوم", "أرني التصنيفات"]
+        if intent == "categories":
+            suggestions = [f"Show {c.get('name')} products" for c in ctx.get("categories", [])[:3]]
+        elif intent in ("browse", "deals"):
+            suggestions = [f"Details: {p.get('title')}" for p in ctx.get("products", [])[:2]]
+            suggestions.append("Today’s deals")
+        elif intent == "prices":
+            suggestions = ["Cheapest items", "Discounted deals", "Products by my budget"]
+        else:
+            suggestions = ["Best deals", "Browse categories", "Latest brands"]
+        return suggestions or ["Today’s deals", "Show categories"]
 
 # نقطة نهاية المحادثة
 @app.route('/api/ai/chat', methods=['POST'])
@@ -263,34 +361,56 @@ def api_ai_chat():
             return jsonify({"error": "message is required"}), 400
 
         # كشف اللغة
-        lang = detect(user_message)
-        system_prompt = ZUHALL_SALES_SYSTEM_PROMPT if lang == "ar" else """
-        You are Zuhall AI, a smart and friendly sales assistant. Respond in natural, concise English, focusing on product benefits and personalized suggestions.
-        """
+        try:
+            lang = detect(user_message)
+        except Exception:
+            lang = 'ar'
+        system_prompt = ZUHALL_SALES_SYSTEM_PROMPT if lang == "ar" else ENG_SALES_SYSTEM_PROMPT
 
         ctx = get_shop_context_zuhall()
         intent, preferences = detect_sales_intent(user_message)
         include_products = intent in ("browse", "deals", "prices")
         product_candidates = filter_products_by_query(user_message, ctx) if include_products else []
 
+        # دمج تاريخ محادثة قصير لزيادة الإنسانية في الرد (اختياري من الواجهة)
+        history = data.get('history') or []
+        his_lines = []
+        for msg in history[-6:]:
+            if not isinstance(msg, dict):
+                continue
+            role = (msg.get('type') or msg.get('role') or '').lower()
+            text = (msg.get('text') or '').strip()
+            if not text:
+                continue
+            if role in ('user','human','client'):
+                his_lines.append(f"- العميل: {text}")
+            elif role in ('bot','assistant','ai'):
+                his_lines.append(f"- المساعد: {text}")
+        history_text = "\n".join(his_lines)
+        composed_message = user_message
+        if history_text:
+            composed_message = f"الرسائل السابقة (مختصر):\n{history_text}\n\nرسالة العميل الحالية: {user_message}"
+
         # توليد الرد
-        system, user = build_sales_prompt(user_message, ctx)
+        system, user = build_sales_prompt(composed_message, ctx, system_prompt)
         try:
             text = hf_generate_sales(system, user)
             if intent == "complaint":
-                text = "آسفين جدًا على أي إزعاج! قولي وش المشكلة بالضبط وأحلها لك على طول."
-            text = compose_sales_reply(text, ctx, intent, preferences, product_candidates)
+                text = ("آسفين جدًا على أي إزعاج! قولي وش المشكلة بالضبط وأحلها لك على طول." if lang == 'ar' 
+                        else "Sorry for the trouble! Tell me the issue and I’ll fix it right away.")
+            text = compose_sales_reply(text, ctx, intent, preferences, product_candidates, lang)
         except Exception as e:
             logger.error(f"Generation error: {e}")
-            text = "فيه مشكلة تقنية، بس أقدر أساعدك! قولي وش تبغى وأرشح لك."
-            text = compose_sales_reply(text, ctx, intent, preferences, product_candidates)
+            text = ("فيه مشكلة تقنية، بس أقدر أساعدك! قولي وش تبغى وأرشح لك." if lang == 'ar' 
+                    else "Technical hiccup, but I can still help! Tell me what you want and I’ll suggest options.")
+            text = compose_sales_reply(text, ctx, intent, preferences, product_candidates, lang)
 
         return jsonify({
             "text": text,
-            "products": ctx.get("products", [])[:8] if include_products else [],
-            "categories": ctx.get("categories", [])[:12] if intent == "categories" else [],
-            "brands": ctx.get("brands", [])[:12] if intent == "brands" else [],
-            "suggestions": get_dynamic_suggestions(ctx, intent),
+            "products": (product_candidates[:8] if include_products else []),
+            "categories": (ctx.get("categories", [])[:12] if intent == "categories" else []),
+            "brands": (ctx.get("brands", [])[:12] if intent == "brands" else []),
+            "suggestions": get_dynamic_suggestions(ctx, intent, lang),
             "timestamp": datetime.now().isoformat(),
         })
     except Exception as e:
