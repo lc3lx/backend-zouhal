@@ -1,5 +1,31 @@
-const factory = require('./handlersFactory');
-const SubCategory = require('../models/subCategoryModel');
+const sharp = require("sharp");
+const { v4: uuidv4 } = require("uuid");
+const asyncHandler = require("express-async-handler");
+
+const factory = require("./handlersFactory");
+const { uploadSingleImage } = require("../middlewares/uploadImageMiddleware");
+const SubCategory = require("../models/subCategoryModel");
+
+// Upload single image
+exports.uploadSubCategoryImage = uploadSingleImage("image");
+
+// Image processing
+exports.resizeImage = asyncHandler(async (req, res, next) => {
+  const filename = `subcategory-${uuidv4()}-${Date.now()}.jpeg`;
+
+  if (req.file) {
+    await sharp(req.file.buffer)
+      .resize(600, 600)
+      .toFormat("jpeg")
+      .jpeg({ quality: 95 })
+      .toFile(`uploads/subcategories/${filename}`);
+
+    // Save image into our db
+    req.body.image = filename;
+  }
+
+  next();
+});
 
 exports.setCategoryIdToBody = (req, res, next) => {
   // Nested route (Create)

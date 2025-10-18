@@ -73,6 +73,12 @@ const productSchema = new mongoose.Schema(
         ref: "SubCategory",
       },
     ],
+    secondaryCategories: [
+      {
+        type: mongoose.Schema.ObjectId,
+        ref: "SecondaryCategory",
+      },
+    ],
     brand: {
       type: mongoose.Schema.ObjectId,
       ref: "Brand",
@@ -144,7 +150,9 @@ const setImageURL = (doc) => {
       if (variant.images && Array.isArray(variant.images)) {
         variant.images = variant.images.map((img) => {
           const isAbsolute = /^(http|https):\/\//i.test(img);
-          return isAbsolute ? img : `${process.env.BASE_URL}/uploads/products/${img}`;
+          return isAbsolute
+            ? img
+            : `${process.env.BASE_URL}/uploads/products/${img}`;
         });
       }
       return variant;
