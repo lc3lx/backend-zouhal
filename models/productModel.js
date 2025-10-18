@@ -98,6 +98,35 @@ const productSchema = new mongoose.Schema(
       trim: true,
       // URL للمنتج من المتجر الخارجي - للأدمن فقط
     },
+    // New fields
+    season: {
+      type: String,
+      enum: ["summer", "autumn", "spring", "winter"],
+      // Optional field for seasonal products
+    },
+    fabricType: {
+      type: String,
+      trim: true,
+      // Optional field for fabric type
+    },
+    deliveryTime: {
+      type: String,
+      trim: true,
+      // Delivery time information
+    },
+    // Sizes without colors (for products that don't have color variants)
+    sizes: [
+      {
+        label: { type: String, trim: true },
+        stock: { type: Number, default: 0 },
+      },
+    ],
+    // Currency settings
+    currency: {
+      type: String,
+      enum: ["USD", "SYP"],
+      default: "USD",
+    },
   },
   {
     timestamps: true,
