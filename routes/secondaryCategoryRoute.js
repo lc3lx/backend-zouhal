@@ -9,8 +9,6 @@ const {
   setSubCategoryIdToBody,
   setCategoryIdToBody,
   createFilterObj,
-  uploadSecondaryCategoryImage,
-  resizeImage,
 } = require("../services/secondaryCategoryService");
 
 const {
@@ -31,8 +29,6 @@ router
   .post(
     authService.protect,
     authService.allowedTo("admin", "manager"),
-    uploadSecondaryCategoryImage,
-    resizeImage,
     setSubCategoryIdToBody,
     setCategoryIdToBody,
     createSecondaryCategoryValidator,
@@ -46,8 +42,6 @@ router
   .put(
     authService.protect,
     authService.allowedTo("admin", "manager"),
-    uploadSecondaryCategoryImage,
-    resizeImage,
     updateSecondaryCategoryValidator,
     updateSecondaryCategory
   )
