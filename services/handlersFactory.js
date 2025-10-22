@@ -1,6 +1,6 @@
-const asyncHandler = require('express-async-handler');
-const ApiError = require('../utils/apiError');
-const ApiFeatures = require('../utils/apiFeatures');
+const asyncHandler = require("express-async-handler");
+const ApiError = require("../utils/apiError");
+const ApiFeatures = require("../utils/apiFeatures");
 
 exports.deleteOne = (Model) =>
   asyncHandler(async (req, res, next) => {
@@ -48,7 +48,7 @@ exports.getOne = (Model, populationOpt) =>
     }
 
     // 2) Execute query
-    const document = await query;
+    const document = await query.select("-__v");
 
     if (!document) {
       return next(new ApiError(`No document for this id ${id}`, 404));
@@ -56,7 +56,7 @@ exports.getOne = (Model, populationOpt) =>
     res.status(200).json({ data: document });
   });
 
-exports.getAll = (Model, modelName = '') =>
+exports.getAll = (Model, modelName = "") =>
   asyncHandler(async (req, res) => {
     let filter = {};
     if (req.filterObj) {
@@ -64,7 +64,10 @@ exports.getAll = (Model, modelName = '') =>
     }
     // Build query
     const documentsCounts = await Model.countDocuments();
-    const apiFeatures = new ApiFeatures(Model.find(filter), req.query)
+    const apiFeatures = new ApiFeatures(
+      Model.find(filter).select("-__v"),
+      req.query
+    )
       .paginate(documentsCounts)
       .filter()
       .search(modelName)
@@ -73,7 +76,7 @@ exports.getAll = (Model, modelName = '') =>
 
     // Execute query
     const { mongooseQuery, paginationResult } = apiFeatures;
-    const documents = await mongooseQuery;
+    const documents = await mongooseQuery.lean();
 
     res
       .status(200)

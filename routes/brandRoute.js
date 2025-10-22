@@ -1,12 +1,12 @@
-const express = require('express');
+const express = require("express");
 const {
   getBrandValidator,
   createBrandValidator,
   updateBrandValidator,
   deleteBrandValidator,
-} = require('../utils/validators/brandValidator');
+} = require("../utils/validators/brandValidator");
 
-const authService = require('../services/authService');
+const authService = require("../services/authService");
 
 const {
   getBrands,
@@ -16,27 +16,28 @@ const {
   deleteBrand,
   uploadBrandImage,
   resizeImage,
-} = require('../services/brandService');
+} = require("../services/brandService");
+const { cacheMiddleware } = require("../utils/cache");
 
 const router = express.Router();
 
 router
-  .route('/')
-  .get(getBrands)
+  .route("/")
+  .get(cacheMiddleware(60), getBrands)
   .post(
     authService.protect,
-    authService.allowedTo('admin', 'manager'),
+    authService.allowedTo("admin", "manager"),
     uploadBrandImage,
     resizeImage,
     createBrandValidator,
     createBrand
   );
 router
-  .route('/:id')
+  .route("/:id")
   .get(getBrandValidator, getBrand)
   .put(
     authService.protect,
-    authService.allowedTo('admin', 'manager'),
+    authService.allowedTo("admin", "manager"),
     uploadBrandImage,
     resizeImage,
     updateBrandValidator,
@@ -44,7 +45,7 @@ router
   )
   .delete(
     authService.protect,
-    authService.allowedTo('admin'),
+    authService.allowedTo("admin"),
     deleteBrandValidator,
     deleteBrand
   );

@@ -92,3 +92,5 @@ walletSchema.methods.hasSufficientBalance = function (amount) {
 };
 
 module.exports = mongoose.model("Wallet", walletSchema);
+// Indexes
+walletSchema.index({ user: 1 }, { unique: true });

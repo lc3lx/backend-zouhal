@@ -20,6 +20,12 @@ const calcTotalCartPrice = (cart) => {
 // @access  Private/User
 exports.addProductToCart = asyncHandler(async (req, res, next) => {
   const { productId, color, size } = req.body;
+  
+  // Security: Ignore any price sent from frontend - we calculate it from database
+  if (req.body.price) {
+    console.warn('⚠️ Security Warning: Price sent from frontend ignored. Using database price.');
+  }
+  
   const product = await Product.findById(productId);
 
   // 1) Get Cart for logged user

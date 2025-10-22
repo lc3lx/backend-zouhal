@@ -199,3 +199,12 @@ productSchema.post("save", (doc) => {
 });
 
 module.exports = mongoose.model("Product", productSchema);
+// Useful indexes for common queries and sorts
+productSchema.index({ slug: 1 });
+productSchema.index({ category: 1 });
+productSchema.index({ brand: 1 });
+productSchema.index({ price: 1 });
+productSchema.index({ sold: -1 });
+productSchema.index({ ratingsAverage: -1 });
+productSchema.index({ createdAt: -1 });
+productSchema.index({ category: 1, price: 1, ratingsAverage: -1 });

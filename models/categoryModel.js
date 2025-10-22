@@ -39,3 +39,5 @@ categorySchema.post("save", (doc) => {
 const CategoryModel = mongoose.model("Category", categorySchema);
 
 module.exports = CategoryModel;
+// Indexes
+categorySchema.index({ slug: 1 });

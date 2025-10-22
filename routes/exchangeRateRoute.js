@@ -9,6 +9,7 @@ const {
   getCurrentExchangeRate,
   convertPrice,
 } = require("../services/exchangeRateService");
+const { cacheMiddleware } = require("../utils/cache");
 
 const {
   createExchangeRateValidator,
@@ -22,8 +23,8 @@ const authService = require("../services/authService");
 const router = express.Router();
 
 // Public routes
-router.get("/current", getCurrentExchangeRate);
-router.get("/convert", convertPrice);
+router.get("/current", cacheMiddleware(30), getCurrentExchangeRate);
+router.get("/convert", cacheMiddleware(30), convertPrice);
 
 // Protected routes
 router.use(authService.protect);
@@ -32,7 +33,7 @@ router.use(authService.allowedTo("admin", "manager"));
 router
   .route("/")
   .post(createExchangeRateValidator, createExchangeRate)
-  .get(getExchangeRates);
+  .get(cacheMiddleware(30), getExchangeRates);
 
 router
   .route("/:id")

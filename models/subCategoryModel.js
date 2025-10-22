@@ -41,3 +41,6 @@ subCategorySchema.post("save", (doc) => {
 });
 
 module.exports = mongoose.model("SubCategory", subCategorySchema);
+// Indexes
+subCategorySchema.index({ category: 1 });
+subCategorySchema.index({ slug: 1 });

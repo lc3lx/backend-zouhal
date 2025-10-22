@@ -6,7 +6,7 @@ class ApiFeatures {
 
   filter() {
     const queryStringObj = { ...this.queryString };
-    const excludesFields = ['page', 'sort', 'limit', 'fields'];
+    const excludesFields = ["page", "sort", "limit", "fields"];
     excludesFields.forEach((field) => delete queryStringObj[field]);
     // Apply filtration using [gte, gt, lte, lt]
     let queryStr = JSON.stringify(queryStringObj);
@@ -19,20 +19,21 @@ class ApiFeatures {
 
   sort() {
     if (this.queryString.sort) {
-      const sortBy = this.queryString.sort.split(',').join(' ');
+      const sortBy = this.queryString.sort.split(",").join(" ");
       this.mongooseQuery = this.mongooseQuery.sort(sortBy);
     } else {
-      this.mongooseQuery = this.mongooseQuery.sort('-createAt');
+      // Default newest first by creation time
+      this.mongooseQuery = this.mongooseQuery.sort("-createdAt");
     }
     return this;
   }
 
   limitFields() {
     if (this.queryString.fields) {
-      const fields = this.queryString.fields.split(',').join(' ');
+      const fields = this.queryString.fields.split(",").join(" ");
       this.mongooseQuery = this.mongooseQuery.select(fields);
     } else {
-      this.mongooseQuery = this.mongooseQuery.select('-__v');
+      this.mongooseQuery = this.mongooseQuery.select("-__v");
     }
     return this;
   }
@@ -40,13 +41,13 @@ class ApiFeatures {
   search(modelName) {
     if (this.queryString.keyword) {
       let query = {};
-      if (modelName === 'Products') {
+      if (modelName === "Products") {
         query.$or = [
-          { title: { $regex: this.queryString.keyword, $options: 'i' } },
-          { description: { $regex: this.queryString.keyword, $options: 'i' } },
+          { title: { $regex: this.queryString.keyword, $options: "i" } },
+          { description: { $regex: this.queryString.keyword, $options: "i" } },
         ];
       } else {
-        query = { name: { $regex: this.queryString.keyword, $options: 'i' } };
+        query = { name: { $regex: this.queryString.keyword, $options: "i" } };
       }
 
       this.mongooseQuery = this.mongooseQuery.find(query);
@@ -56,7 +57,10 @@ class ApiFeatures {
 
   paginate(countDocuments) {
     const page = this.queryString.page * 1 || 1;
-    const limit = this.queryString.limit * 1 || 50;
+    // Default 20, cap to 100
+    let limit = this.queryString.limit * 1 || 20;
+    if (Number.isNaN(limit) || limit <= 0) limit = 20;
+    if (limit > 100) limit = 100;
     const skip = (page - 1) * limit;
     const endIndex = page * limit;
 

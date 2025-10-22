@@ -1,10 +1,10 @@
-const express = require('express');
+const express = require("express");
 const {
   getProductValidator,
   createProductValidator,
   updateProductValidator,
   deleteProductValidator,
-} = require('../utils/validators/productValidator');
+} = require("../utils/validators/productValidator");
 
 const {
   getProducts,
@@ -14,34 +14,35 @@ const {
   deleteProduct,
   uploadProductImages,
   resizeProductImages,
-} = require('../services/productService');
-const authService = require('../services/authService');
-const reviewsRoute = require('./reviewRoute');
+} = require("../services/productService");
+const { cacheMiddleware } = require("../utils/cache");
+const authService = require("../services/authService");
+const reviewsRoute = require("./reviewRoute");
 
 const router = express.Router();
 
 // POST   /products/jkshjhsdjh2332n/reviews
 // GET    /products/jkshjhsdjh2332n/reviews
 // GET    /products/jkshjhsdjh2332n/reviews/87487sfww3
-router.use('/:productId/reviews', reviewsRoute);
+router.use("/:productId/reviews", reviewsRoute);
 
 router
-  .route('/')
-  .get(getProducts)
+  .route("/")
+  .get(cacheMiddleware(60), getProducts)
   .post(
     authService.protect,
-    authService.allowedTo('admin', 'manager'),
+    authService.allowedTo("admin", "manager"),
     uploadProductImages,
     resizeProductImages,
     createProductValidator,
     createProduct
   );
 router
-  .route('/:id')
+  .route("/:id")
   .get(getProductValidator, getProduct)
   .put(
     authService.protect,
-    authService.allowedTo('admin', 'manager'),
+    authService.allowedTo("admin", "manager"),
     uploadProductImages,
     resizeProductImages,
     updateProductValidator,
@@ -49,7 +50,7 @@ router
   )
   .delete(
     authService.protect,
-    authService.allowedTo('admin'),
+    authService.allowedTo("admin"),
     deleteProductValidator,
     deleteProduct
   );

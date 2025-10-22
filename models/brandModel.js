@@ -35,3 +35,5 @@ brandSchema.post("save", (doc) => {
 });
 // 2- Create model
 module.exports = mongoose.model("Brand", brandSchema);
+// Indexes
+brandSchema.index({ slug: 1 });

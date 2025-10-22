@@ -5,7 +5,14 @@
   "main": "index.js",
   "scripts": {
     "start:dev": "nodemon server.js",
-    "start": "NODE_ENV=production node server.js"
+    "start": "NODE_ENV=production node server.js",
+    "test": "cross-env NODE_ENV=test jest --runInBand",
+    "bench:products": "npx autocannon -d 10 -c 20 http://localhost:8000/api/v1/products",
+    "bench:categories": "npx autocannon -d 10 -c 20 http://localhost:8000/api/v1/categories",
+    "bench:brands": "npx autocannon -d 10 -c 20 http://localhost:8000/api/v1/brands",
+    "bench:offers": "npx autocannon -d 10 -c 20 http://localhost:8000/api/v1/offers/active",
+    "bench:rates": "npx autocannon -d 10 -c 20 http://localhost:8000/api/v1/exchange-rates/current",
+    "bench:all": "npm run bench:products && npm run bench:categories && npm run bench:brands && npm run bench:offers && npm run bench:rates"
   },
   "keywords": [],
   "author": "",
@@ -32,6 +39,9 @@
     "uuid": "^8.3.2"
   },
   "devDependencies": {
+    "cross-env": "^7.0.3",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
     "eslint": "^8.5.0",
     "eslint-config-airbnb": "^19.0.4",
     "eslint-config-prettier": "^8.3.0",

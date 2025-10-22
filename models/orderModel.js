@@ -83,3 +83,6 @@ orderSchema.pre(/^find/, function (next) {
 });
 
 module.exports = mongoose.model("Order", orderSchema);
+// Indexes
+orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ status: 1, createdAt: -1 });

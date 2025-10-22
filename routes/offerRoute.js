@@ -9,6 +9,7 @@ const {
   resizeImage,
   toggleOfferStatus,
 } = require("../services/offerService");
+const { cacheMiddleware } = require("../utils/cache");
 const { protect, allowedTo } = require("../services/authService");
 const { uploadSingleImage } = require("../middlewares/uploadImageMiddleware");
 const {
@@ -20,8 +21,8 @@ const validationMiddleware = require("../middlewares/validatorMiddleware");
 const router = express.Router();
 
 // Public routes
-router.get("/", getOffers);
-router.get("/active", getActiveOffers);
+router.get("/", cacheMiddleware(60), getOffers);
+router.get("/active", cacheMiddleware(60), getActiveOffers);
 router.get("/:id", getOffer);
 
 // Protected routes (Admin only)
