@@ -15,7 +15,7 @@ const {
   uploadProductImages,
   resizeProductImages,
 } = require("../services/productService");
-const { cacheMiddleware } = require("../utils/cache");
+
 const authService = require("../services/authService");
 const reviewsRoute = require("./reviewRoute");
 
@@ -28,7 +28,7 @@ router.use("/:productId/reviews", reviewsRoute);
 
 router
   .route("/")
-  .get(cacheMiddleware(60), getProducts)
+  .get(getProducts)
   .post(
     authService.protect,
     authService.allowedTo("admin", "manager"),
