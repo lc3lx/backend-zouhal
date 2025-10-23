@@ -25,7 +25,7 @@ const subCategorySchema = new mongoose.Schema(
 
 const setImageURL = (doc) => {
   if (doc.image) {
-    const imageUrl = `${process.env.BASE_URL}/uploads/subcategories/${doc.image}`;
+    const imageUrl = `${process.env.BASE_URL}/uploads/subCategories/${doc.image}`;
     doc.image = imageUrl;
   }
 };
