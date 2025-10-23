@@ -76,7 +76,7 @@ exports.getAll = (Model, modelName = "") =>
 
     // Execute query
     const { mongooseQuery, paginationResult } = apiFeatures;
-    const documents = await mongooseQuery.lean();
+    const documents = await mongooseQuery;
 
     res
       .status(200)
