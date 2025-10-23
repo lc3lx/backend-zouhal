@@ -33,6 +33,9 @@ brandSchema.post("init", (doc) => {
 brandSchema.post("save", (doc) => {
   setImageURL(doc);
 });
+brandSchema.post("findOneAndUpdate", (doc) => {
+  setImageURL(doc);
+});
 // 2- Create model
 module.exports = mongoose.model("Brand", brandSchema);
 // Indexes
