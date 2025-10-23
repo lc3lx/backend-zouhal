@@ -17,13 +17,12 @@ const {
   uploadBrandImage,
   resizeImage,
 } = require("../services/brandService");
-const { cacheMiddleware } = require("../utils/cache");
 
 const router = express.Router();
 
 router
   .route("/")
-  .get(cacheMiddleware(60), getBrands)
+  .get(getBrands)
   .post(
     authService.protect,
     authService.allowedTo("admin", "manager"),

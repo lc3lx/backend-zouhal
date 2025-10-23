@@ -20,7 +20,6 @@ const {
 const authService = require("../services/authService");
 
 const subcategoriesRoute = require("./subCategoryRoute");
-const { cacheMiddleware } = require("../utils/cache");
 
 const router = express.Router();
 
@@ -29,7 +28,7 @@ router.use("/:categoryId/subcategories", subcategoriesRoute);
 
 router
   .route("/")
-  .get(cacheMiddleware(60), getCategories)
+  .get(getCategories)
   .post(
     authService.protect,
     authService.allowedTo("admin", "manager"),
