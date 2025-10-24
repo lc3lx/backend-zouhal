@@ -108,6 +108,9 @@ exports.updateOfferValidator = [
     .optional()
     .custom((value, { req }) => {
       // Allow update without new image if existing offer has image
+      if (!req.file && !value) {
+        throw new Error("Offer image is required");
+      }
       return true;
     }),
 
