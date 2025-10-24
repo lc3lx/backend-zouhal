@@ -25,8 +25,12 @@ const subCategorySchema = new mongoose.Schema(
 
 const setImageURL = (doc) => {
   if (doc.image) {
-    const imageUrl = `${process.env.BASE_URL}/uploads/subCategories/${doc.image}`;
-    doc.image = imageUrl;
+    // تحقق إذا كان الـ URL مطلق (يبدأ بـ http)
+    const isAbsolute = /^(http|https):\/\//i.test(doc.image);
+    if (!isAbsolute) {
+      const imageUrl = `${process.env.BASE_URL}/uploads/subCategories/${doc.image}`;
+      doc.image = imageUrl;
+    }
   }
 };
 
