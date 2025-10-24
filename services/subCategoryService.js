@@ -74,7 +74,11 @@ exports.updateSubCategory = asyncHandler(async (req, res, next) => {
 
   // If updating with new image, delete old image
   if (req.body.image && existingSubCategory.image) {
-    const oldImagePath = path.join(__dirname, "../uploads/subcategories", existingSubCategory.image);
+    const oldImagePath = path.join(
+      __dirname,
+      "../uploads/subcategories",
+      existingSubCategory.image
+    );
     if (fs.existsSync(oldImagePath)) {
       fs.unlinkSync(oldImagePath);
     }
@@ -108,7 +112,11 @@ exports.deleteSubCategory = asyncHandler(async (req, res, next) => {
 
   // Delete associated image file
   if (subCategory.image) {
-    const imagePath = path.join(__dirname, "../uploads/subcategories", subCategory.image);
+    const imagePath = path.join(
+      __dirname,
+      "../uploads/subcategories",
+      subCategory.image
+    );
     if (fs.existsSync(imagePath)) {
       fs.unlinkSync(imagePath);
     }

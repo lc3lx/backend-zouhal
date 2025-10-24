@@ -40,6 +40,11 @@ subCategorySchema.post("save", (doc) => {
   setImageURL(doc);
 });
 
+// update
+subCategorySchema.post("findOneAndUpdate", (doc) => {
+  setImageURL(doc);
+});
+
 module.exports = mongoose.model("SubCategory", subCategorySchema);
 // Indexes
 subCategorySchema.index({ category: 1 });

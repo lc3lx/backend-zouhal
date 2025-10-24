@@ -35,6 +35,11 @@ categorySchema.post("save", (doc) => {
   setImageURL(doc);
 });
 
+// update
+categorySchema.post("findOneAndUpdate", (doc) => {
+  setImageURL(doc);
+});
+
 // 2- Create model
 const CategoryModel = mongoose.model("Category", categorySchema);
 

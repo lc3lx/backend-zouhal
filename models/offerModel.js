@@ -99,6 +99,11 @@ offerSchema.post("save", (doc) => {
   setImageURL(doc);
 });
 
+// update
+offerSchema.post("findOneAndUpdate", (doc) => {
+  setImageURL(doc);
+});
+
 const Offer = mongoose.model("Offer", offerSchema);
 
 module.exports = Offer;

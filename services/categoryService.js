@@ -1,16 +1,16 @@
-const sharp = require('sharp');
-const { v4: uuidv4 } = require('uuid');
-const asyncHandler = require('express-async-handler');
-const fs = require('fs');
-const path = require('path');
+const sharp = require("sharp");
+const { v4: uuidv4 } = require("uuid");
+const asyncHandler = require("express-async-handler");
+const fs = require("fs");
+const path = require("path");
 
-const factory = require('./handlersFactory');
-const { uploadSingleImage } = require('../middlewares/uploadImageMiddleware');
-const Category = require('../models/categoryModel');
-const ApiError = require('../utils/apiError');
+const factory = require("./handlersFactory");
+const { uploadSingleImage } = require("../middlewares/uploadImageMiddleware");
+const Category = require("../models/categoryModel");
+const ApiError = require("../utils/apiError");
 
 // Upload single image
-exports.uploadCategoryImage = uploadSingleImage('image');
+exports.uploadCategoryImage = uploadSingleImage("image");
 
 // Image processing
 exports.resizeImage = asyncHandler(async (req, res, next) => {
@@ -19,7 +19,7 @@ exports.resizeImage = asyncHandler(async (req, res, next) => {
   if (req.file) {
     await sharp(req.file.buffer)
       .resize(600, 600)
-      .toFormat('jpeg')
+      .toFormat("jpeg")
       .jpeg({ quality: 95 })
       .toFile(`uploads/categories/${filename}`);
 
@@ -59,7 +59,11 @@ exports.updateCategory = asyncHandler(async (req, res, next) => {
 
   // If updating with new image, delete old image
   if (req.body.image && existingCategory.image) {
-    const oldImagePath = path.join(__dirname, "../uploads/categories", existingCategory.image);
+    const oldImagePath = path.join(
+      __dirname,
+      "../uploads/categories",
+      existingCategory.image
+    );
     if (fs.existsSync(oldImagePath)) {
       fs.unlinkSync(oldImagePath);
     }
@@ -93,7 +97,11 @@ exports.deleteCategory = asyncHandler(async (req, res, next) => {
 
   // Delete associated image file
   if (category.image) {
-    const imagePath = path.join(__dirname, "../uploads/categories", category.image);
+    const imagePath = path.join(
+      __dirname,
+      "../uploads/categories",
+      category.image
+    );
     if (fs.existsSync(imagePath)) {
       fs.unlinkSync(imagePath);
     }
