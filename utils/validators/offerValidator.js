@@ -22,6 +22,15 @@ exports.createOfferValidator = [
 
   check("icon").notEmpty().withMessage("Offer icon is required"),
 
+  check("image")
+    .optional()
+    .custom((value, { req }) => {
+      if (!req.file && !value) {
+        throw new Error("Offer image is required");
+      }
+      return true;
+    }),
+
   check("color.primary")
     .notEmpty()
     .withMessage("Primary color is required")
@@ -94,6 +103,13 @@ exports.updateOfferValidator = [
     .optional()
     .matches(/^#[0-9A-Fa-f]{6}$/)
     .withMessage("Secondary color must be a valid hex color"),
+
+  check("image")
+    .optional()
+    .custom((value, { req }) => {
+      // Allow update without new image if existing offer has image
+      return true;
+    }),
 
   check("startDate")
     .optional()

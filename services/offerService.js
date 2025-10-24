@@ -1,36 +1,23 @@
-const Offer = require("../models/offerModel");
-const ApiError = require("../utils/apiError");
 const asyncHandler = require("express-async-handler");
 const sharp = require("sharp");
 const { v4: uuidv4 } = require("uuid");
 const fs = require("fs");
 const path = require("path");
+const Offer = require("../models/offerModel");
+const ApiError = require("../utils/apiError");
 
 exports.resizeImage = asyncHandler(async (req, res, next) => {
-  if (!req.file) return next();
-
   const filename = `offer-${uuidv4()}-${Date.now()}.jpeg`;
 
-  try {
-    // Create uploads/offers directory if it doesn't exist
-    const uploadDir = path.join(__dirname, "../uploads/offers");
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-
+  if (req.file) {
     await sharp(req.file.buffer)
-      .resize(600, 600, {
-        fit: "cover",
-        position: "center",
-      })
+      .resize(600, 600)
       .toFormat("jpeg")
       .jpeg({ quality: 95 })
-      .toFile(path.join(uploadDir, filename));
+      .toFile(`uploads/offers/${filename}`);
 
     // Save image into our db
     req.body.image = filename;
-  } catch (error) {
-    return next(new ApiError("Error processing image", 500));
   }
 
   next();
@@ -43,7 +30,7 @@ exports.getOffers = asyncHandler(async (req, res, next) => {
   const skip = (page - 1) * limit;
 
   // Build query
-  let query = {};
+  const query = {};
 
   // Filter by active status
   if (isActive !== undefined) {
@@ -55,7 +42,7 @@ exports.getOffers = asyncHandler(async (req, res, next) => {
     .populate("createdBy", "name email")
     .sort({ priority: -1, createdAt: -1 })
     .skip(skip)
-    .limit(parseInt(limit));
+    .limit(parseInt(limit, 10));
 
   // Get total count
   const total = await Offer.countDocuments(query);
@@ -65,10 +52,10 @@ exports.getOffers = asyncHandler(async (req, res, next) => {
     results: offers.length,
     data: offers,
     pagination: {
-      currentPage: parseInt(page),
+      currentPage: parseInt(page, 10),
       totalPages: Math.ceil(total / limit),
       totalItems: total,
-      itemsPerPage: parseInt(limit),
+      itemsPerPage: parseInt(limit, 10),
     },
   });
 });

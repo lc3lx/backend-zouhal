@@ -37,11 +37,7 @@ const offerSchema = new mongoose.Schema(
         trim: true,
       },
     },
-    image: {
-      type: String,
-      required: [true, "Offer image is required"],
-      trim: true,
-    },
+    image: String,
     isActive: {
       type: Boolean,
       default: true,
@@ -84,6 +80,24 @@ offerSchema.virtual("isCurrentlyActive").get(function () {
 // Ensure virtual fields are serialized
 offerSchema.set("toJSON", { virtuals: true });
 offerSchema.set("toObject", { virtuals: true });
+
+// Set image URL
+const setImageURL = (doc) => {
+  if (doc.image) {
+    const imageUrl = `${process.env.BASE_URL}/uploads/offers/${doc.image}`;
+    doc.image = imageUrl;
+  }
+};
+
+// findOne, findAll and update
+offerSchema.post("init", (doc) => {
+  setImageURL(doc);
+});
+
+// create
+offerSchema.post("save", (doc) => {
+  setImageURL(doc);
+});
 
 const Offer = mongoose.model("Offer", offerSchema);
 
