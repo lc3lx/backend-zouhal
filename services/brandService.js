@@ -1,10 +1,13 @@
 const asyncHandler = require("express-async-handler");
 const { v4: uuidv4 } = require("uuid");
 const sharp = require("sharp");
+const fs = require("fs");
+const path = require("path");
 
 const factory = require("./handlersFactory");
 const { uploadSingleImage } = require("../middlewares/uploadImageMiddleware");
 const Brand = require("../models/brandModel");
+const ApiError = require("../utils/apiError");
 
 // Upload single image
 exports.uploadBrandImage = uploadSingleImage("image");
@@ -46,9 +49,65 @@ exports.createBrand = factory.createOne(Brand);
 // @desc    Update specific brand
 // @route   PUT /api/v1/brands/:id
 // @access  Private
-exports.updateBrand = factory.updateOne(Brand);
+exports.updateBrand = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+
+  // Get the existing brand to check for old image
+  const existingBrand = await Brand.findById(id);
+  if (!existingBrand) {
+    return next(new ApiError(`No brand found for this id ${id}`, 404));
+  }
+
+  // If updating with new image, delete old image
+  if (req.body.image && existingBrand.image) {
+    const oldImagePath = path.join(
+      __dirname,
+      "../uploads/brands",
+      existingBrand.image
+    );
+    if (fs.existsSync(oldImagePath)) {
+      fs.unlinkSync(oldImagePath);
+    }
+  }
+
+  const brand = await Brand.findByIdAndUpdate(id, req.body, {
+    new: true,
+    runValidators: true,
+  });
+
+  // Trigger save to apply post hooks
+  await brand.save();
+
+  res.status(200).json({
+    status: "success",
+    data: brand,
+  });
+});
 
 // @desc    Delete specific brand
 // @route   DELETE /api/v1/brands/:id
 // @access  Private
-exports.deleteBrand = factory.deleteOne(Brand);
+exports.deleteBrand = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+
+  const brand = await Brand.findById(id);
+
+  if (!brand) {
+    return next(new ApiError(`No brand found for this id ${id}`, 404));
+  }
+
+  // Delete associated image file
+  if (brand.image) {
+    const imagePath = path.join(__dirname, "../uploads/brands", brand.image);
+    if (fs.existsSync(imagePath)) {
+      fs.unlinkSync(imagePath);
+    }
+  }
+
+  await Brand.findByIdAndDelete(id);
+
+  res.status(204).json({
+    status: "success",
+    data: null,
+  });
+});

@@ -1,10 +1,13 @@
 const sharp = require("sharp");
 const { v4: uuidv4 } = require("uuid");
 const asyncHandler = require("express-async-handler");
+const fs = require("fs");
+const path = require("path");
 
 const factory = require("./handlersFactory");
 const { uploadSingleImage } = require("../middlewares/uploadImageMiddleware");
 const SubCategory = require("../models/subCategoryModel");
+const ApiError = require("../utils/apiError");
 
 // Upload single image
 exports.uploadSubCategoryImage = uploadSingleImage("image");
@@ -60,9 +63,61 @@ exports.createSubCategory = factory.createOne(SubCategory);
 // @desc    Update specific subcategory
 // @route   PUT /api/v1/subcategories/:id
 // @access  Private
-exports.updateSubCategory = factory.updateOne(SubCategory);
+exports.updateSubCategory = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+
+  // Get the existing subcategory to check for old image
+  const existingSubCategory = await SubCategory.findById(id);
+  if (!existingSubCategory) {
+    return next(new ApiError(`No subcategory found for this id ${id}`, 404));
+  }
+
+  // If updating with new image, delete old image
+  if (req.body.image && existingSubCategory.image) {
+    const oldImagePath = path.join(__dirname, "../uploads/subcategories", existingSubCategory.image);
+    if (fs.existsSync(oldImagePath)) {
+      fs.unlinkSync(oldImagePath);
+    }
+  }
+
+  const subCategory = await SubCategory.findByIdAndUpdate(id, req.body, {
+    new: true,
+    runValidators: true,
+  });
+
+  // Trigger save to apply post hooks
+  await subCategory.save();
+
+  res.status(200).json({
+    status: "success",
+    data: subCategory,
+  });
+});
 
 // @desc    Delete specific subCategory
 // @route   DELETE /api/v1/subcategories/:id
 // @access  Private
-exports.deleteSubCategory = factory.deleteOne(SubCategory);
+exports.deleteSubCategory = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+
+  const subCategory = await SubCategory.findById(id);
+
+  if (!subCategory) {
+    return next(new ApiError(`No subcategory found for this id ${id}`, 404));
+  }
+
+  // Delete associated image file
+  if (subCategory.image) {
+    const imagePath = path.join(__dirname, "../uploads/subcategories", subCategory.image);
+    if (fs.existsSync(imagePath)) {
+      fs.unlinkSync(imagePath);
+    }
+  }
+
+  await SubCategory.findByIdAndDelete(id);
+
+  res.status(204).json({
+    status: "success",
+    data: null,
+  });
+});
