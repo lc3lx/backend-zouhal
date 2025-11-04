@@ -21,7 +21,6 @@ const productSchema = new mongoose.Schema(
     },
     quantity: {
       type: Number,
-      required: [true, "Product quantity is required"],
     },
     sold: {
       type: Number,
@@ -83,6 +82,11 @@ const productSchema = new mongoose.Schema(
       type: mongoose.Schema.ObjectId,
       ref: "Brand",
     },
+    store: {
+      type: mongoose.Schema.ObjectId,
+      ref: "Store",
+      // Store that this product belongs to
+    },
     ratingsAverage: {
       type: Number,
       min: [1, "Rating must be above or equal 1.0"],
@@ -113,6 +117,18 @@ const productSchema = new mongoose.Schema(
       type: String,
       trim: true,
       // Delivery time information
+    },
+    deliveryStartDate: {
+      type: Date,
+      // Start date for delivery period
+    },
+    deliveryEndDate: {
+      type: Date,
+      // End date for delivery period
+    },
+    deliveryDays: {
+      type: Number,
+      // Number of delivery days (for offers)
     },
     // Sizes without colors (for products that don't have color variants)
     sizes: [
@@ -147,10 +163,15 @@ productSchema.pre(/^find/, function (next) {
   this.populate({
     path: "category",
     select: "name -_id",
-  }).populate({
-    path: "brand",
-    select: "name -_id",
-  });
+  })
+    .populate({
+      path: "brand",
+      select: "name -_id",
+    })
+    .populate({
+      path: "store",
+      select: "name logo -_id",
+    });
   next();
 });
 

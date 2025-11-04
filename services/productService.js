@@ -30,10 +30,17 @@ exports.resizeProductImages = asyncHandler(async (req, res, next) => {
   }
 
   // Enforce soft limits to mimic previous multer field limits
-  if (imageCoverFiles.length > 1) imageCoverFiles = imageCoverFiles.slice(0, 1);
-  if (imagesFiles.length > 10) imagesFiles = imagesFiles.slice(0, 10);
-  if (variantImageFiles.length > 30)
+  if (imageCoverFiles.length > 1) {
+    imageCoverFiles = imageCoverFiles.slice(0, 1);
+  }
+  if (imagesFiles.length > 10) {
+    // Allow up to 10 images for the product (not counting cover)
+    imagesFiles = imagesFiles.slice(0, 10);
+  }
+  if (variantImageFiles.length > 30) {
+    // Allow up to 30 images total for all variants
     variantImageFiles = variantImageFiles.slice(0, 30);
+  }
 
   // 1- Image processing for imageCover
   if (imageCoverFiles.length > 0) {

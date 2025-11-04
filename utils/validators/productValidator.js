@@ -21,8 +21,8 @@ exports.createProductValidator = [
     .isLength({ max: 2000 })
     .withMessage("Too long description"),
   check("quantity")
-    .notEmpty()
-    .withMessage("Product quantity is required")
+    .optional()
+
     .isNumeric()
     .withMessage("Product quantity must be a number"),
   check("sold")
@@ -223,6 +223,7 @@ exports.createProductValidator = [
     }),
 
   check("brand").optional().isMongoId().withMessage("Invalid ID formate"),
+  check("store").optional().isMongoId().withMessage("Invalid Store ID format"),
   check("ratingsAverage")
     .optional()
     .isNumeric()
@@ -251,6 +252,34 @@ exports.createProductValidator = [
     .optional()
     .isLength({ min: 2, max: 200 })
     .withMessage("Delivery time must be between 2 and 200 characters"),
+
+  check("deliveryStartDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Delivery start date must be a valid date")
+    .toDate(),
+
+  check("deliveryEndDate")
+    .optional()
+    .isISO8601()
+    .withMessage("Delivery end date must be a valid date")
+    .toDate()
+    .custom((value, { req }) => {
+      if (
+        req.body.deliveryStartDate &&
+        value < new Date(req.body.deliveryStartDate)
+      ) {
+        throw new Error("Delivery end date must be after start date");
+      }
+      return true;
+    }),
+
+  check("deliveryDays")
+    .optional()
+    .isNumeric()
+    .withMessage("Delivery days must be a number")
+    .isInt({ min: 0 })
+    .withMessage("Delivery days must be a positive integer"),
 
   check("currency")
     .optional()
