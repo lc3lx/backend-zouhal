@@ -21,6 +21,7 @@ const productSchema = new mongoose.Schema(
     },
     quantity: {
       type: Number,
+      default: 99,
     },
     sold: {
       type: Number,
