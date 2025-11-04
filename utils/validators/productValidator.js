@@ -3,6 +3,7 @@ const { check, body } = require("express-validator");
 const validatorMiddleware = require("../../middlewares/validatorMiddleware");
 const Category = require("../../models/categoryModel");
 const SubCategory = require("../../models/subCategoryModel");
+const SecondaryCategory = require("../../models/secondaryCategoryModel");
 
 exports.createProductValidator = [
   check("title")
@@ -146,6 +147,76 @@ exports.createProductValidator = [
             return Promise.reject(
               new Error(`subcategories not belong to category`)
             );
+          }
+        }
+      );
+    }),
+
+  // secondaryCategories: allow string JSON or single string, and validate IDs
+  check("secondaryCategories")
+    .optional()
+    .customSanitizer((val) => {
+      // Normalize to array of IDs
+      if (Array.isArray(val)) {
+        if (
+          val.length === 1 &&
+          typeof val[0] === "string" &&
+          /^\s*\[/.test(val[0])
+        ) {
+          try {
+            return JSON.parse(val[0]);
+          } catch (e) {
+            return val;
+          }
+        }
+        return val;
+      }
+      if (typeof val === "string") {
+        try {
+          const parsed = JSON.parse(val);
+          return parsed;
+        } catch (e) {
+          return [val];
+        }
+      }
+      return val;
+    })
+    .isArray()
+    .withMessage("secondaryCategories must be an array of IDs"),
+  check("secondaryCategories.*")
+    .optional()
+    .isMongoId()
+    .withMessage("Invalid ID formate"),
+  body("secondaryCategories")
+    .optional()
+    .custom((ids) => {
+      let arr = ids;
+      if (typeof arr === "string") {
+        try {
+          arr = JSON.parse(arr);
+        } catch (e) {
+          arr = [arr];
+        }
+      } else if (
+        Array.isArray(arr) &&
+        arr.length === 1 &&
+        typeof arr[0] === "string" &&
+        /^\s*\[/.test(arr[0])
+      ) {
+        try {
+          arr = JSON.parse(arr[0]);
+        } catch (e) {
+          // keep as-is
+        }
+      }
+      if (!Array.isArray(arr) || arr.length === 0) return true;
+      return SecondaryCategory.find({ _id: { $exists: true, $in: arr } }).then(
+        (result) => {
+          if (
+            arr.length > 0 &&
+            (result.length < 1 || result.length !== arr.length)
+          ) {
+            return Promise.reject(new Error(`Invalid secondaryCategories Ids`));
           }
         }
       );

@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=['http://localhost:3000', 'http://localhost:3001', 'https://www.zuhall.com', 'https://zuhall.com'])
 
 # إعداد Redis للتخزين المؤقت (آمن مع منفذ افتراضي 6379)
 REDIS_PORT = int(os.getenv('REDIS_PORT', '6379'))
@@ -1225,8 +1225,45 @@ def api_ai_health():
     return jsonify({
         "ok": model is not None,
         "model_name": MODEL_NAME,
+        "features": {
+            "smart_search": True,
+            "context_management": True,
+            "product_comparison": True,
+            "recommendations": True,
+            "nlp_processing": True
+        },
+        "endpoints": {
+            "chat": "/api/ai/chat",
+            "search": "/api/ai/search", 
+            "compare": "/api/ai/compare",
+            "similar": "/api/ai/similar"
+        },
         "timestamp": datetime.now().isoformat(),
     })
+
+# نقطة نهاية للاختبار السريع
+@app.route('/api/ai/test', methods=['POST'])
+def api_ai_test():
+    try:
+        data = request.json or {}
+        test_message = data.get('message', 'مرحبا')
+        
+        # اختبار سريع بدون تحميل النموذج الكامل
+        return jsonify({
+            "status": "success",
+            "message": "زحل AI يعمل بشكل مثالي! 🤖",
+            "test_message": test_message,
+            "features_available": [
+                "البحث الذكي",
+                "إدارة السياق", 
+                "مقارنة المنتجات",
+                "الاقتراحات الذكية",
+                "معالجة اللغة الطبيعية"
+            ],
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', '3001'))

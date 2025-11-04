@@ -1,10 +1,10 @@
-const asyncHandler = require('express-async-handler');
-const { v4: uuidv4 } = require('uuid');
-const sharp = require('sharp');
+const asyncHandler = require("express-async-handler");
+const { v4: uuidv4 } = require("uuid");
+const sharp = require("sharp");
 
-const { uploadAny } = require('../middlewares/uploadImageMiddleware');
-const factory = require('./handlersFactory');
-const Product = require('../models/productModel');
+const { uploadAny } = require("../middlewares/uploadImageMiddleware");
+const factory = require("./handlersFactory");
+const Product = require("../models/productModel");
 
 // Accept any files; we'll normalize and enforce limits inside the resize handler
 exports.uploadProductImages = uploadAny();
@@ -18,9 +18,9 @@ exports.resizeProductImages = asyncHandler(async (req, res, next) => {
   if (req.files) {
     if (Array.isArray(req.files)) {
       req.files.forEach((f) => {
-        if (f.fieldname === 'imageCover') imageCoverFiles.push(f);
-        else if (f.fieldname === 'images') imagesFiles.push(f);
-        else if (f.fieldname === 'variantImages') variantImageFiles.push(f);
+        if (f.fieldname === "imageCover") imageCoverFiles.push(f);
+        else if (f.fieldname === "images") imagesFiles.push(f);
+        else if (f.fieldname === "variantImages") variantImageFiles.push(f);
       });
     } else {
       imageCoverFiles = req.files.imageCover || [];
@@ -32,7 +32,8 @@ exports.resizeProductImages = asyncHandler(async (req, res, next) => {
   // Enforce soft limits to mimic previous multer field limits
   if (imageCoverFiles.length > 1) imageCoverFiles = imageCoverFiles.slice(0, 1);
   if (imagesFiles.length > 10) imagesFiles = imagesFiles.slice(0, 10);
-  if (variantImageFiles.length > 30) variantImageFiles = variantImageFiles.slice(0, 30);
+  if (variantImageFiles.length > 30)
+    variantImageFiles = variantImageFiles.slice(0, 30);
 
   // 1- Image processing for imageCover
   if (imageCoverFiles.length > 0) {
@@ -40,7 +41,7 @@ exports.resizeProductImages = asyncHandler(async (req, res, next) => {
 
     await sharp(imageCoverFiles[0].buffer)
       .resize(2000, 1333)
-      .toFormat('jpeg')
+      .toFormat("jpeg")
       .jpeg({ quality: 95 })
       .toFile(`uploads/products/${imageCoverFileName}`);
 
@@ -56,7 +57,7 @@ exports.resizeProductImages = asyncHandler(async (req, res, next) => {
         const imageName = `product-${uuidv4()}-${Date.now()}-${index + 1}.jpeg`;
         await sharp(img.buffer)
           .resize(2000, 1333)
-          .toFormat('jpeg')
+          .toFormat("jpeg")
           .jpeg({ quality: 95 })
           .toFile(`uploads/products/${imageName}`);
         req.body.images.push(imageName);
@@ -69,10 +70,12 @@ exports.resizeProductImages = asyncHandler(async (req, res, next) => {
     const processedVariantImages = [];
     await Promise.all(
       variantImageFiles.map(async (img, index) => {
-        const imageName = `product-${uuidv4()}-${Date.now()}-variant-${index + 1}.jpeg`;
+        const imageName = `product-${uuidv4()}-${Date.now()}-variant-${
+          index + 1
+        }.jpeg`;
         await sharp(img.buffer)
-          .resize(600, 600, { fit: 'inside', withoutEnlargement: true })
-          .toFormat('jpeg')
+          .resize(600, 600, { fit: "inside", withoutEnlargement: true })
+          .toFormat("jpeg")
           .jpeg({ quality: 95 })
           .toFile(`uploads/products/${imageName}`);
         processedVariantImages.push(imageName);
@@ -80,7 +83,7 @@ exports.resizeProductImages = asyncHandler(async (req, res, next) => {
     );
 
     // Parse variants JSON structure (if provided)
-    if (req.body.variants && typeof req.body.variants === 'string') {
+    if (req.body.variants && typeof req.body.variants === "string") {
       try {
         req.body.variants = JSON.parse(req.body.variants);
       } catch (e) {
@@ -91,7 +94,10 @@ exports.resizeProductImages = asyncHandler(async (req, res, next) => {
 
     // variantImageMap indicates how many images per variant (JSON array)
     let imageMap = [];
-    if (req.body.variantImageMap && typeof req.body.variantImageMap === 'string') {
+    if (
+      req.body.variantImageMap &&
+      typeof req.body.variantImageMap === "string"
+    ) {
       try {
         imageMap = JSON.parse(req.body.variantImageMap);
       } catch (e) {
@@ -101,7 +107,10 @@ exports.resizeProductImages = asyncHandler(async (req, res, next) => {
       imageMap = req.body.variantImageMap;
     }
 
-    if (req.body.variants.length > 0 && imageMap.length === req.body.variants.length) {
+    if (
+      req.body.variants.length > 0 &&
+      imageMap.length === req.body.variants.length
+    ) {
       let cursor = 0;
       req.body.variants = req.body.variants.map((v, i) => {
         const count = Number(imageMap[i]) || 0;
@@ -115,18 +124,42 @@ exports.resizeProductImages = asyncHandler(async (req, res, next) => {
     }
   }
 
+  // Normalize secondaryCategories if sent via multipart/form-data
+  if (req.body && req.body.secondaryCategories !== undefined) {
+    const val = req.body.secondaryCategories;
+    if (Array.isArray(val)) {
+      if (
+        val.length === 1 &&
+        typeof val[0] === "string" &&
+        /^\s*\[/.test(val[0])
+      ) {
+        try {
+          req.body.secondaryCategories = JSON.parse(val[0]);
+        } catch (e) {
+          // leave as-is
+        }
+      }
+    } else if (typeof val === "string") {
+      try {
+        req.body.secondaryCategories = JSON.parse(val);
+      } catch (e) {
+        req.body.secondaryCategories = [val];
+      }
+    }
+  }
+
   return next();
 });
 
 // @desc    Get list of products
 // @route   GET /api/v1/products
 // @access  Public
-exports.getProducts = factory.getAll(Product, 'Products');
+exports.getProducts = factory.getAll(Product, "Products");
 
 // @desc    Get specific product by id
 // @route   GET /api/v1/products/:id
 // @access  Public
-exports.getProduct = factory.getOne(Product, 'reviews');
+exports.getProduct = factory.getOne(Product, "reviews");
 
 // @desc    Create product
 // @route   POST  /api/v1/products
