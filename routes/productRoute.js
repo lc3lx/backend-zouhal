@@ -16,6 +16,7 @@ const {
   resizeProductImages,
 } = require("../services/productService");
 
+const { scrapeProductFromUrl } = require("../services/productScraperService");
 const authService = require("../services/authService");
 const reviewsRoute = require("./reviewRoute");
 
@@ -37,6 +38,35 @@ router
     createProductValidator,
     createProduct
   );
+
+// Route to scrape product data from URL
+router.post(
+  "/scrape",
+  authService.protect,
+  authService.allowedTo("admin", "manager"),
+  async (req, res, next) => {
+    try {
+      const { url } = req.body;
+      if (!url) {
+        return res.status(400).json({
+          status: "error",
+          message: "الرابط مطلوب",
+        });
+      }
+
+      const productData = await scrapeProductFromUrl(url);
+      res.status(200).json({
+        status: "success",
+        data: productData,
+      });
+    } catch (error) {
+      res.status(400).json({
+        status: "error",
+        message: error.message || "حدث خطأ أثناء استخراج البيانات",
+      });
+    }
+  }
+);
 router
   .route("/:id")
   .get(getProductValidator, getProduct)
