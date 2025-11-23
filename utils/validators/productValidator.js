@@ -317,6 +317,74 @@ exports.updateProductValidator = [
       req.body.slug = slugify(val);
       return true;
     }),
+  // Normalize subcategories if sent as JSON string
+  check("subcategories")
+    .optional()
+    .customSanitizer((val) => {
+      if (typeof val === "string") {
+        try {
+          const parsed = JSON.parse(val);
+          return parsed;
+        } catch (e) {
+          return [val];
+        }
+      }
+      if (Array.isArray(val)) {
+        if (
+          val.length === 1 &&
+          typeof val[0] === "string" &&
+          /^\s*\[/.test(val[0])
+        ) {
+          try {
+            return JSON.parse(val[0]);
+          } catch (e) {
+            return val;
+          }
+        }
+        return val;
+      }
+      return val;
+    })
+    .isArray()
+    .withMessage("Subcategories must be an array of IDs"),
+  check("subcategories.*")
+    .optional()
+    .isMongoId()
+    .withMessage("Invalid ID formate"),
+  // Normalize secondaryCategories if sent as JSON string
+  check("secondaryCategories")
+    .optional()
+    .customSanitizer((val) => {
+      if (typeof val === "string") {
+        try {
+          const parsed = JSON.parse(val);
+          return parsed;
+        } catch (e) {
+          return [val];
+        }
+      }
+      if (Array.isArray(val)) {
+        if (
+          val.length === 1 &&
+          typeof val[0] === "string" &&
+          /^\s*\[/.test(val[0])
+        ) {
+          try {
+            return JSON.parse(val[0]);
+          } catch (e) {
+            return val;
+          }
+        }
+        return val;
+      }
+      return val;
+    })
+    .isArray()
+    .withMessage("secondaryCategories must be an array of IDs"),
+  check("secondaryCategories.*")
+    .optional()
+    .isMongoId()
+    .withMessage("Invalid ID formate"),
   validatorMiddleware,
 ];
 

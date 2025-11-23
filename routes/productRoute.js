@@ -14,6 +14,7 @@ const {
   deleteProduct,
   uploadProductImages,
   resizeProductImages,
+  extractProductFromUrl,
 } = require("../services/productService");
 
 const authService = require("../services/authService");
@@ -54,5 +55,13 @@ router
     deleteProductValidator,
     deleteProduct
   );
+
+// Extract product from URL
+router.post(
+  "/extract",
+  authService.protect,
+  authService.allowedTo("admin", "manager"),
+  extractProductFromUrl
+);
 
 module.exports = router;

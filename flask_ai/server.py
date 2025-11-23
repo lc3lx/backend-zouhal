@@ -12,6 +12,7 @@ import requests
 from datetime import datetime
 import re
 import time
+from urllib.parse import urlparse
 
 # إعداد التسجيل
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -1263,6 +1264,115 @@ def api_ai_test():
             "timestamp": datetime.now().isoformat()
         })
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Product extraction endpoint
+@app.route('/api/ai/extract-product', methods=['POST'])
+def api_extract_product():
+    try:
+        data = request.json or {}
+        url = data.get('url', '')
+        html = data.get('html', '')
+        
+        if not url:
+            return jsonify({"error": "URL is required"}), 400
+        
+        # Basic extraction from HTML
+        extracted = {
+            "source_url": url,
+            "title": "",
+            "clean_title": "",
+            "images": [],
+            "colors": [],
+            "sizes": [],
+            "price": "",
+            "description_raw": "",
+            "description_clean": "",
+            "my_custom_description": "",
+            "seo_keywords": [],
+            "tags": []
+        }
+        
+        if html:
+            import re
+            from bs4 import BeautifulSoup
+            
+            try:
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                # Extract title
+                title_tag = soup.find('title')
+                if title_tag:
+                    extracted['title'] = title_tag.get_text().strip()
+                    extracted['clean_title'] = re.sub(r'\s*[-|]\s*.*$', '', extracted['title']).strip()[:100]
+                
+                # Extract meta description
+                meta_desc = soup.find('meta', attrs={'name': 'description'})
+                if meta_desc and meta_desc.get('content'):
+                    extracted['description_raw'] = meta_desc.get('content').strip()
+                
+                # Extract images
+                img_tags = soup.find_all('img', src=True)
+                images = []
+                parsed_url = urlparse(url)
+                for img in img_tags[:20]:  # Limit to 20 images
+                    src = img.get('src', '')
+                    if src and not any(x in src.lower() for x in ['logo', 'icon', 'avatar']):
+                        if src.startswith('//'):
+                            images.append(f'https:{src}')
+                        elif src.startswith('/'):
+                            images.append(f'{parsed_url.scheme}://{parsed_url.netloc}{src}')
+                        elif src.startswith('http'):
+                            images.append(src)
+                extracted['images'] = list(set(images))[:10]
+                
+                # Extract price
+                price_patterns = [
+                    r'\$[\s]*([\d,]+\.?\d*)',
+                    r'([\d,]+\.?\d*)\s*USD',
+                    r'price["\']?\s*:\s*["\']?([\d,]+\.?\d*)',
+                ]
+                for pattern in price_patterns:
+                    matches = re.findall(pattern, html, re.IGNORECASE)
+                    if matches:
+                        try:
+                            price_str = matches[0].replace(',', '')
+                            price_num = float(price_str)
+                            if 0 < price_num < 100000:
+                                extracted['price'] = str(price_num)
+                                break
+                        except:
+                            continue
+                
+                # Generate descriptions
+                if not extracted['description_raw']:
+                    parsed_url = urlparse(url)
+                    extracted['description_raw'] = f"منتج {extracted['title'] or 'مميز'} من {parsed_url.netloc}"
+                
+                extracted['description_clean'] = re.sub(r'<[^>]+>', '', extracted['description_raw']).strip()[:500]
+                
+                # Generate custom description
+                title = extracted['clean_title'] or extracted['title']
+                desc = f"اكتشف {title or 'هذا المنتج المميز'} الآن! "
+                if extracted['description_clean']:
+                    desc += extracted['description_clean'][:200] + " "
+                if extracted['price']:
+                    desc += f"بسعر مميز {extracted['price']}$ فقط. "
+                desc += "جودة عالية وتصميم أنيق. اطلبه الآن واستمتع بأفضل تجربة تسوق!"
+                extracted['my_custom_description'] = desc[:500]
+                
+                # Extract keywords
+                if title:
+                    words = [w for w in re.findall(r'\b\w{4,}\b', title.lower())]
+                    extracted['seo_keywords'] = list(set(words))[:10]
+                    extracted['tags'] = list(set(words))[:5]
+                    
+            except Exception as e:
+                logger.error(f"Error parsing HTML: {e}")
+        
+        return jsonify(extracted)
+    except Exception as e:
+        logger.error(f"Extract product API error: {e}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':

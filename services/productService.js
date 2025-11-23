@@ -1,6 +1,8 @@
 const asyncHandler = require("express-async-handler");
 const { v4: uuidv4 } = require("uuid");
 const sharp = require("sharp");
+const axios = require("axios");
+const ApiError = require("../utils/apiError");
 
 const { uploadAny } = require("../middlewares/uploadImageMiddleware");
 const factory = require("./handlersFactory");
@@ -131,6 +133,30 @@ exports.resizeProductImages = asyncHandler(async (req, res, next) => {
     }
   }
 
+  // Normalize subcategories if sent via multipart/form-data
+  if (req.body && req.body.subcategories !== undefined) {
+    const val = req.body.subcategories;
+    if (Array.isArray(val)) {
+      if (
+        val.length === 1 &&
+        typeof val[0] === "string" &&
+        /^\s*\[/.test(val[0])
+      ) {
+        try {
+          req.body.subcategories = JSON.parse(val[0]);
+        } catch (e) {
+          // leave as-is
+        }
+      }
+    } else if (typeof val === "string") {
+      try {
+        req.body.subcategories = JSON.parse(val);
+      } catch (e) {
+        req.body.subcategories = [val];
+      }
+    }
+  }
+
   // Normalize secondaryCategories if sent via multipart/form-data
   if (req.body && req.body.secondaryCategories !== undefined) {
     const val = req.body.secondaryCategories;
@@ -181,3 +207,209 @@ exports.updateProduct = factory.updateOne(Product);
 // @route   DELETE /api/v1/products/:id
 // @access  Private
 exports.deleteProduct = factory.deleteOne(Product);
+
+// @desc    Extract product data from URL
+// @route   POST /api/v1/products/extract
+// @access  Private
+exports.extractProductFromUrl = asyncHandler(async (req, res, next) => {
+  const { url } = req.body;
+
+  if (!url || typeof url !== "string") {
+    return next(new ApiError("URL is required", 400));
+  }
+
+  // Validate URL format
+  try {
+    new URL(url);
+  } catch (error) {
+    return next(new ApiError("Invalid URL format", 400));
+  }
+
+  try {
+    // Try to fetch HTML from the URL
+    const response = await axios.get(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      },
+      timeout: 30000,
+      maxRedirects: 5,
+    });
+
+    const html = response.data;
+
+    // Try to call Flask AI server for extraction
+    const aiServerUrl = process.env.AI_SERVER_URL || "http://localhost:3001";
+    let extractedData = null;
+
+    try {
+      const aiResponse = await axios.post(
+        `${aiServerUrl}/api/ai/extract-product`,
+        {
+          url: url,
+          html: html.substring(0, 50000), // Limit HTML size
+        },
+        {
+          timeout: 60000,
+        }
+      );
+      extractedData = aiResponse.data;
+    } catch (aiError) {
+      console.warn("AI server not available, using basic extraction:", aiError.message);
+      // Fallback to basic extraction
+      extractedData = basicExtractProductData(html, url);
+    }
+
+    // If AI extraction failed, use basic extraction
+    if (!extractedData || !extractedData.title) {
+      extractedData = basicExtractProductData(html, url);
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: extractedData,
+    });
+  } catch (error) {
+    console.error("Error extracting product:", error);
+    return next(
+      new ApiError(
+        `Failed to extract product data: ${error.message}`,
+        error.response?.status || 500
+      )
+    );
+  }
+});
+
+// Basic product data extraction (fallback)
+function basicExtractProductData(html, url) {
+  const data = {
+    source_url: url,
+    title: "",
+    clean_title: "",
+    images: [],
+    colors: [],
+    sizes: [],
+    price: "",
+    description_raw: "",
+    description_clean: "",
+    my_custom_description: "",
+    seo_keywords: [],
+    tags: [],
+  };
+
+  try {
+    // Extract title
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    if (titleMatch) {
+      data.title = titleMatch[1].trim();
+      data.clean_title = data.title
+        .replace(/\s*[-|]\s*.*$/, "")
+        .trim()
+        .substring(0, 100);
+    }
+
+    // Extract meta description
+    const descMatch = html.match(
+      /<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i
+    );
+    if (descMatch) {
+      data.description_raw = descMatch[1].trim();
+    }
+
+    // Extract images (common patterns)
+    const imgMatches = html.matchAll(/<img[^>]+src=["']([^"']+)["']/gi);
+    const images = [];
+    for (const match of imgMatches) {
+      const imgUrl = match[1];
+      if (
+        imgUrl &&
+        !imgUrl.includes("logo") &&
+        !imgUrl.includes("icon") &&
+        (imgUrl.includes("product") ||
+          imgUrl.includes("item") ||
+          imgUrl.match(/\.(jpg|jpeg|png|webp)/i))
+      ) {
+        // Convert relative URLs to absolute
+        if (imgUrl.startsWith("//")) {
+          images.push(`https:${imgUrl}`);
+        } else if (imgUrl.startsWith("/")) {
+          const urlObj = new URL(url);
+          images.push(`${urlObj.origin}${imgUrl}`);
+        } else if (imgUrl.startsWith("http")) {
+          images.push(imgUrl);
+        }
+      }
+    }
+    data.images = [...new Set(images)].slice(0, 10); // Remove duplicates and limit
+
+    // Extract price (common patterns)
+    const pricePatterns = [
+      /["']price["']\s*:\s*["']?([\d,]+\.?\d*)/i,
+      /<span[^>]*class=["'][^"']*price[^"']*["'][^>]*>([^<]+)<\/span>/i,
+      /\$[\s]*([\d,]+\.?\d*)/g,
+      /([\d,]+\.?\d*)\s*USD/gi,
+    ];
+
+    for (const pattern of pricePatterns) {
+      const matches = html.match(pattern);
+      if (matches) {
+        const priceStr = matches[1] || matches[0];
+        const priceNum = parseFloat(priceStr.replace(/,/g, ""));
+        if (priceNum && priceNum > 0 && priceNum < 100000) {
+          data.price = priceNum.toString();
+          break;
+        }
+      }
+    }
+
+    // Generate basic description if missing
+    if (!data.description_raw) {
+      data.description_raw = `منتج ${data.title || "مميز"} من ${new URL(url).hostname}`;
+    }
+
+    // Generate clean description
+    data.description_clean = data.description_raw
+      .replace(/<[^>]+>/g, "")
+      .trim()
+      .substring(0, 500);
+
+    // Generate custom description
+    data.my_custom_description = generateCustomDescription(
+      data.title,
+      data.description_clean,
+      data.price
+    );
+
+    // Extract keywords from title
+    if (data.title) {
+      const words = data.title
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 3);
+      data.seo_keywords = [...new Set(words)].slice(0, 10);
+      data.tags = [...new Set(words)].slice(0, 5);
+    }
+  } catch (error) {
+    console.error("Error in basic extraction:", error);
+  }
+
+  return data;
+}
+
+// Generate custom Arabic description
+function generateCustomDescription(title, rawDesc, price) {
+  let desc = `اكتشف ${title || "هذا المنتج المميز"} الآن! `;
+
+  if (rawDesc) {
+    desc += rawDesc.substring(0, 200) + " ";
+  }
+
+  if (price) {
+    desc += `بسعر مميز ${price}$ فقط. `;
+  }
+
+  desc +=
+    "جودة عالية وتصميم أنيق. اطلبه الآن واستمتع بأفضل تجربة تسوق!";
+
+  return desc.substring(0, 500);
+}
