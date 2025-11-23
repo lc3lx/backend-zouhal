@@ -8,6 +8,19 @@ const { uploadAny } = require("../middlewares/uploadImageMiddleware");
 const factory = require("./handlersFactory");
 const Product = require("../models/productModel");
 
+// Lazy load Puppeteer (only when needed)
+let puppeteer = null;
+async function getPuppeteer() {
+  if (!puppeteer) {
+    try {
+      puppeteer = require("puppeteer");
+    } catch (error) {
+      throw new Error("Puppeteer is not installed. Please run: npm install puppeteer");
+    }
+  }
+  return puppeteer;
+}
+
 // Accept any files; we'll normalize and enforce limits inside the resize handler
 exports.uploadProductImages = uploadAny();
 
@@ -226,43 +239,68 @@ exports.extractProductFromUrl = asyncHandler(async (req, res, next) => {
   }
 
   try {
-    // Try to fetch HTML from the URL
-    const response = await axios.get(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-      },
-      timeout: 30000,
-      maxRedirects: 5,
-    });
-
-    const html = response.data;
-
-    // Try to call Flask AI server for extraction
-    const aiServerUrl = process.env.AI_SERVER_URL || "http://localhost:3001";
+    const isShein = url.includes("shein.com") || url.includes("shein.");
+    
     let extractedData = null;
 
-    try {
-      const aiResponse = await axios.post(
-        `${aiServerUrl}/api/ai/extract-product`,
-        {
-          url: url,
-          html: html.substring(0, 50000), // Limit HTML size
-        },
-        {
-          timeout: 60000,
-        }
-      );
-      extractedData = aiResponse.data;
-    } catch (aiError) {
-      console.warn("AI server not available, using basic extraction:", aiError.message);
-      // Fallback to basic extraction
-      extractedData = basicExtractProductData(html, url);
-    }
+    // Use Puppeteer for Shein (JavaScript-rendered pages)
+    if (isShein) {
+      try {
+        extractedData = await extractSheinWithPuppeteer(url);
+      } catch (puppeteerError) {
+        console.warn("Puppeteer extraction failed, trying basic method:", puppeteerError.message);
+        // Fallback to basic extraction
+        const response = await axios.get(url, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          },
+          timeout: 30000,
+          maxRedirects: 5,
+        });
+        extractedData = basicExtractProductData(response.data, url);
+      }
+    } else {
+      // For other sites, try regular HTTP request first
+      try {
+        const response = await axios.get(url, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          },
+          timeout: 30000,
+          maxRedirects: 5,
+        });
 
-    // If AI extraction failed, use basic extraction
-    if (!extractedData || !extractedData.title) {
-      extractedData = basicExtractProductData(html, url);
+        const html = response.data;
+
+        // Try to call Flask AI server for extraction
+        const aiServerUrl = process.env.AI_SERVER_URL || "http://localhost:3001";
+        try {
+          const aiResponse = await axios.post(
+            `${aiServerUrl}/api/ai/extract-product`,
+            {
+              url: url,
+              html: html.substring(0, 50000), // Limit HTML size
+            },
+            {
+              timeout: 60000,
+            }
+          );
+          extractedData = aiResponse.data;
+        } catch (aiError) {
+          console.warn("AI server not available, using basic extraction:", aiError.message);
+          extractedData = basicExtractProductData(html, url);
+        }
+
+        // If AI extraction failed, use basic extraction
+        if (!extractedData || !extractedData.title) {
+          extractedData = basicExtractProductData(html, url);
+        }
+      } catch (error) {
+        console.error("Error fetching URL:", error.message);
+        return next(new ApiError(`Failed to fetch URL: ${error.message}`, 500));
+      }
     }
 
     res.status(200).json({
@@ -403,7 +441,279 @@ function basicExtractProductData(html, url) {
   return data;
 }
 
-// Special extraction for Shein products
+// Extract Shein product data using Puppeteer
+async function extractSheinWithPuppeteer(url) {
+  const puppeteerLib = await getPuppeteer();
+  let browser = null;
+
+  try {
+    browser = await puppeteerLib.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-dev-shm-usage",
+      ],
+    });
+
+    const page = await browser.newPage();
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    );
+
+    // Collect network requests for images
+    const networkData = {
+      images: [],
+    };
+
+    page.on("response", async (response) => {
+      const responseUrl = response.url();
+      const urlLower = responseUrl.toLowerCase();
+      
+      if (
+        responseUrl.match(/\.(jpg|jpeg|png|webp)/i) &&
+        (urlLower.includes("product") ||
+          urlLower.includes("goods") ||
+          urlLower.includes("images3") ||
+          urlLower.includes("img.ltwebstatic") ||
+          urlLower.includes("she_dist/images3")) &&
+        !urlLower.includes("logo") &&
+        !urlLower.includes("icon") &&
+        !urlLower.includes("error")
+      ) {
+        networkData.images.push(responseUrl);
+      }
+    });
+
+    await page.goto(url, {
+      waitUntil: "networkidle2",
+      timeout: 60000,
+    });
+
+    // Wait for page to load
+    await page.waitForTimeout(5000);
+
+    // Scroll to load lazy images
+    try {
+      await page.evaluate(async () => {
+        await new Promise((resolve) => {
+          let totalHeight = 0;
+          const distance = 100;
+          const timer = setInterval(() => {
+            const scrollHeight = document.body.scrollHeight;
+            window.scrollBy(0, distance);
+            totalHeight += distance;
+
+            if (totalHeight >= scrollHeight) {
+              clearInterval(timer);
+              resolve();
+            }
+          }, 100);
+        });
+      });
+      await page.waitForTimeout(2000);
+    } catch (e) {
+      // Ignore scroll errors
+    }
+
+    // Extract data from page
+    const pageData = await page.evaluate(() => {
+      const result = {
+        title: "",
+        price: "",
+        images: [],
+        colors: [],
+        sizes: [],
+        description: "",
+        jsonData: null,
+      };
+
+      // Extract title from h1
+      const h1 = document.querySelector("h1");
+      if (h1) {
+        result.title = h1.textContent.trim();
+      }
+
+      // Extract price
+      const priceSelectors = [
+        '[class*="price"]',
+        '[data-test-id*="price"]',
+        '[id*="price"]',
+      ];
+      for (const selector of priceSelectors) {
+        const priceEl = document.querySelector(selector);
+        if (priceEl) {
+          const priceText = priceEl.textContent.trim();
+          const priceMatch = priceText.match(/[\d.]+/);
+          if (priceMatch) {
+            result.price = priceMatch[0];
+            break;
+          }
+        }
+      }
+
+      // Extract images from DOM
+      const imgElements = document.querySelectorAll("img");
+      const seenUrls = new Set();
+      imgElements.forEach((img) => {
+        let src = img.src || img.getAttribute("data-src") || img.getAttribute("data-lazy-src");
+        if (src) {
+          const urlLower = src.toLowerCase();
+          if (
+            (urlLower.includes("product") ||
+              urlLower.includes("goods") ||
+              urlLower.includes("images3") ||
+              urlLower.includes("img.ltwebstatic")) &&
+            !urlLower.includes("logo") &&
+            !urlLower.includes("icon") &&
+            !urlLower.includes("error") &&
+            !seenUrls.has(src)
+          ) {
+            result.images.push(src);
+            seenUrls.add(src);
+          }
+        }
+      });
+
+      // Extract colors
+      const colorElements = document.querySelectorAll('[class*="color"], [data-color]');
+      colorElements.forEach((el) => {
+        const colorName = el.getAttribute("data-color") || el.textContent.trim();
+        if (colorName && !result.colors.includes(colorName)) {
+          result.colors.push(colorName);
+        }
+      });
+
+      // Extract sizes
+      const sizeElements = document.querySelectorAll('[class*="size"], [data-size]');
+      sizeElements.forEach((el) => {
+        const sizeName = el.getAttribute("data-size") || el.textContent.trim();
+        if (sizeName && !result.sizes.includes(sizeName)) {
+          result.sizes.push(sizeName);
+        }
+      });
+
+      // Extract JSON from script tags
+      const scripts = Array.from(document.querySelectorAll("script"));
+      for (const script of scripts) {
+        const text = script.textContent || script.innerHTML;
+        if (text.includes("goodsDetail") || text.includes("productDetail") || text.includes("goodsInfo")) {
+          try {
+            // Try to find JSON objects
+            const jsonMatches = text.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g);
+            if (jsonMatches) {
+              for (const match of jsonMatches) {
+                try {
+                  const jsonObj = JSON.parse(match);
+                  const jsonStr = JSON.stringify(jsonObj).toLowerCase();
+                  if (jsonStr.includes("product") || jsonStr.includes("goods") || jsonStr.includes("color")) {
+                    result.jsonData = jsonObj;
+                    break;
+                  }
+                } catch (e) {
+                  // Continue
+                }
+              }
+            }
+          } catch (e) {
+            // Continue
+          }
+        }
+      }
+
+      // Try window object
+      try {
+        if (typeof window !== "undefined") {
+          const windowKeys = Object.keys(window);
+          for (const key of windowKeys) {
+            if (key.toLowerCase().includes("product") || key.toLowerCase().includes("goods")) {
+              try {
+                const obj = window[key];
+                if (obj && typeof obj === "object") {
+                  result.jsonData = obj;
+                  break;
+                }
+              } catch (e) {
+                // Continue
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // Continue
+      }
+
+      return result;
+    });
+
+    // Merge network images with DOM images
+    let allImages = [...new Set([...networkData.images, ...pageData.images])];
+    const seenUrls = new Set(allImages);
+
+    // Extract data from JSON if found
+    const jsonExtracted = {
+      title: "",
+      price: "",
+      images: [],
+      colors: [],
+      sizes: [],
+      description: "",
+    };
+    
+    if (pageData.jsonData) {
+      extractDataFromJson(pageData.jsonData, jsonExtracted, seenUrls);
+      // Add JSON images to all images
+      jsonExtracted.images.forEach(img => {
+        if (!seenUrls.has(img)) {
+          allImages.push(img);
+          seenUrls.add(img);
+        }
+      });
+    }
+
+    // Build result - prioritize JSON data over DOM data
+    const extracted = {
+      source_url: url,
+      title: jsonExtracted.title || pageData.title || "",
+      clean_title: (jsonExtracted.title || pageData.title || "").substring(0, 100),
+      images: allImages.slice(0, 20),
+      colors: jsonExtracted.colors.length > 0 ? jsonExtracted.colors : pageData.colors,
+      sizes: jsonExtracted.sizes.length > 0 ? jsonExtracted.sizes : pageData.sizes,
+      price: jsonExtracted.price || pageData.price || "",
+      description_raw: jsonExtracted.description || pageData.description || "",
+      description_clean: (jsonExtracted.description || pageData.description || "").substring(0, 500),
+      my_custom_description: "",
+      seo_keywords: [],
+      tags: [],
+    };
+
+    // Generate custom description
+    extracted.my_custom_description = generateCustomDescription(
+      extracted.title,
+      extracted.description_clean,
+      extracted.price
+    );
+
+    // Extract keywords
+    if (extracted.title) {
+      const words = extracted.title
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 3 && !w.includes("shein"));
+      extracted.seo_keywords = [...new Set(words)].slice(0, 10);
+      extracted.tags = [...new Set(words)].slice(0, 5);
+    }
+
+    return extracted;
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
+  }
+}
+
+// Special extraction for Shein products (fallback without Puppeteer)
 function extractSheinProductData(html, url) {
   const data = {
     source_url: url,
