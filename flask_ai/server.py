@@ -1295,80 +1295,308 @@ def api_extract_product():
         
         if html:
             import re
+            import json as json_lib
             from bs4 import BeautifulSoup
             
             try:
                 soup = BeautifulSoup(html, 'html.parser')
                 
-                # Extract title
-                title_tag = soup.find('title')
-                if title_tag:
-                    extracted['title'] = title_tag.get_text().strip()
-                    extracted['clean_title'] = re.sub(r'\s*[-|]\s*.*$', '', extracted['title']).strip()[:100]
+                # Check if it's Shein
+                is_shein = 'shein.com' in url or 'shein.' in url
                 
-                # Extract meta description
-                meta_desc = soup.find('meta', attrs={'name': 'description'})
-                if meta_desc and meta_desc.get('content'):
-                    extracted['description_raw'] = meta_desc.get('content').strip()
+                if is_shein:
+                    # Special extraction for Shein
+                    extracted = extract_shein_data(html, url, soup)
+                else:
+                    # Standard extraction
+                    # Extract title
+                    title_tag = soup.find('title')
+                    if title_tag:
+                        extracted['title'] = title_tag.get_text().strip()
+                        extracted['clean_title'] = re.sub(r'\s*[-|]\s*.*$', '', extracted['title']).strip()[:100]
+                    
+                    # Extract meta description
+                    meta_desc = soup.find('meta', attrs={'name': 'description'})
+                    if meta_desc and meta_desc.get('content'):
+                        extracted['description_raw'] = meta_desc.get('content').strip()
+                    
+                    # Extract images
+                    img_tags = soup.find_all('img', src=True)
+                    images = []
+                    parsed_url = urlparse(url)
+                    for img in img_tags[:20]:  # Limit to 20 images
+                        src = img.get('src', '')
+                        if src and not any(x in src.lower() for x in ['logo', 'icon', 'avatar']):
+                            if src.startswith('//'):
+                                images.append(f'https:{src}')
+                            elif src.startswith('/'):
+                                images.append(f'{parsed_url.scheme}://{parsed_url.netloc}{src}')
+                            elif src.startswith('http'):
+                                images.append(src)
+                    extracted['images'] = list(set(images))[:10]
+                    
+                    # Extract price
+                    price_patterns = [
+                        r'\$[\s]*([\d,]+\.?\d*)',
+                        r'([\d,]+\.?\d*)\s*USD',
+                        r'price["\']?\s*:\s*["\']?([\d,]+\.?\d*)',
+                    ]
+                    for pattern in price_patterns:
+                        matches = re.findall(pattern, html, re.IGNORECASE)
+                        if matches:
+                            try:
+                                price_str = matches[0].replace(',', '')
+                                price_num = float(price_str)
+                                if 0 < price_num < 100000:
+                                    extracted['price'] = str(price_num)
+                                    break
+                            except:
+                                continue
+                    
+                    # Generate descriptions
+                    if not extracted['description_raw']:
+                        parsed_url = urlparse(url)
+                        extracted['description_raw'] = f"منتج {extracted['title'] or 'مميز'} من {parsed_url.netloc}"
+                    
+                    extracted['description_clean'] = re.sub(r'<[^>]+>', '', extracted['description_raw']).strip()[:500]
+                    
+                    # Generate custom description
+                    title = extracted['clean_title'] or extracted['title']
+                    desc = f"اكتشف {title or 'هذا المنتج المميز'} الآن! "
+                    if extracted['description_clean']:
+                        desc += extracted['description_clean'][:200] + " "
+                    if extracted['price']:
+                        desc += f"بسعر مميز {extracted['price']}$ فقط. "
+                    desc += "جودة عالية وتصميم أنيق. اطلبه الآن واستمتع بأفضل تجربة تسوق!"
+                    extracted['my_custom_description'] = desc[:500]
+                    
+                    # Extract keywords
+                    if title:
+                        words = [w for w in re.findall(r'\b\w{4,}\b', title.lower())]
+                        extracted['seo_keywords'] = list(set(words))[:10]
+                        extracted['tags'] = list(set(words))[:5]
+                    
+            except Exception as e:
+                logger.error(f"Error parsing HTML: {e}")
+
+def extract_shein_data(html, url, soup):
+    """Extract product data specifically from Shein"""
+    extracted = {
+        "source_url": url,
+        "title": "",
+        "clean_title": "",
+        "images": [],
+        "colors": [],
+        "sizes": [],
+        "price": "",
+        "description_raw": "",
+        "description_clean": "",
+        "my_custom_description": "",
+        "seo_keywords": [],
+        "tags": []
+    }
+    
+    import re
+    import json as json_lib
+    
+    seen_urls = set()
+    
+    try:
+        # Extract from script tags
+        scripts = soup.find_all('script')
+        for script in scripts:
+            script_text = script.string or script.get_text()
+            if not script_text:
+                continue
                 
-                # Extract images
-                img_tags = soup.find_all('img', src=True)
-                images = []
-                parsed_url = urlparse(url)
-                for img in img_tags[:20]:  # Limit to 20 images
-                    src = img.get('src', '')
-                    if src and not any(x in src.lower() for x in ['logo', 'icon', 'avatar']):
-                        if src.startswith('//'):
-                            images.append(f'https:{src}')
-                        elif src.startswith('/'):
-                            images.append(f'{parsed_url.scheme}://{parsed_url.netloc}{src}')
-                        elif src.startswith('http'):
-                            images.append(src)
-                extracted['images'] = list(set(images))[:10]
+            # Look for product data
+            if any(keyword in script_text for keyword in ['goodsDetail', 'productDetail', 'goodsInfo', 'goods_id']):
+                # Try to extract JSON
+                json_matches = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', script_text)
+                for json_str in json_matches:
+                    try:
+                        json_obj = json_lib.loads(json_str)
+                        extract_from_json(json_obj, extracted, seen_urls)
+                    except:
+                        continue
                 
-                # Extract price
-                price_patterns = [
-                    r'\$[\s]*([\d,]+\.?\d*)',
-                    r'([\d,]+\.?\d*)\s*USD',
-                    r'price["\']?\s*:\s*["\']?([\d,]+\.?\d*)',
-                ]
-                for pattern in price_patterns:
-                    matches = re.findall(pattern, html, re.IGNORECASE)
-                    if matches:
+                # Try window.__INITIAL_STATE__
+                state_match = re.search(r'window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});', script_text)
+                if state_match:
+                    try:
+                        state_obj = json_lib.loads(state_match.group(1))
+                        extract_from_json(state_obj, extracted, seen_urls)
+                    except:
+                        pass
+        
+        # Extract images from img tags
+        img_tags = soup.find_all('img', src=True)
+        for img in img_tags:
+            src = img.get('src', '')
+            if src and ('shein' in src or 's7d9' in src) and 'logo' not in src.lower():
+                if src.startswith('//'):
+                    full_url = f'https:{src}'
+                    if full_url not in seen_urls:
+                        extracted['images'].append(full_url)
+                        seen_urls.add(full_url)
+                elif src.startswith('http'):
+                    if src not in seen_urls:
+                        extracted['images'].append(src)
+                        seen_urls.add(src)
+        
+        # Extract title from h1
+        h1 = soup.find('h1')
+        if h1:
+            title = h1.get_text().strip()
+            if title and 'shein' not in title.lower():
+                extracted['title'] = title
+                extracted['clean_title'] = title[:100]
+        
+        # Fallback to title tag
+        if not extracted['title']:
+            title_tag = soup.find('title')
+            if title_tag:
+                title = title_tag.get_text().strip()
+                title = re.sub(r'\s*[-|]\s*شي إن.*$', '', title, flags=re.IGNORECASE)
+                title = re.sub(r'\s*[-|]\s*SHEIN.*$', '', title, flags=re.IGNORECASE)
+                extracted['title'] = title
+                extracted['clean_title'] = title[:100]
+        
+        # Extract price
+        price_patterns = [
+            r'"salePrice"\s*:\s*"?([\d.]+)',
+            r'"price"\s*:\s*"?([\d.]+)',
+            r'"retailPrice"\s*:\s*"?([\d.]+)',
+        ]
+        for pattern in price_patterns:
+            match = re.search(pattern, html, re.IGNORECASE)
+            if match:
+                try:
+                    price = float(match.group(1))
+                    if 0 < price < 100000:
+                        extracted['price'] = str(price)
+                        break
+                except:
+                    continue
+        
+        # Remove duplicates
+        extracted['images'] = list(set(extracted['images']))[:20]
+        
+        # Generate description
+        if not extracted['description_raw']:
+            extracted['description_raw'] = f"منتج {extracted['title'] or 'مميز'} من Shein"
+        
+        extracted['description_clean'] = re.sub(r'<[^>]+>', '', extracted['description_raw']).strip()[:500]
+        
+        title = extracted['clean_title'] or extracted['title']
+        desc = f"اكتشف {title or 'هذا المنتج المميز'} الآن! "
+        if extracted['description_clean']:
+            desc += extracted['description_clean'][:200] + " "
+        if extracted['price']:
+            desc += f"بسعر مميز {extracted['price']}$ فقط. "
+        desc += "جودة عالية وتصميم أنيق. اطلبه الآن واستمتع بأفضل تجربة تسوق!"
+        extracted['my_custom_description'] = desc[:500]
+        
+        # Extract keywords
+        if title:
+            words = [w for w in re.findall(r'\b\w{4,}\b', title.lower()) if 'shein' not in w]
+            extracted['seo_keywords'] = list(set(words))[:10]
+            extracted['tags'] = list(set(words))[:5]
+            
+    except Exception as e:
+        logger.error(f"Error extracting Shein data: {e}")
+    
+    return extracted
+
+def extract_from_json(obj, extracted, seen_urls):
+    """Recursively extract data from JSON object"""
+    if not obj or not isinstance(obj, dict):
+        return
+    
+    try:
+        # Title
+        if not extracted['title']:
+            for key in ['goodsName', 'productName', 'title', 'name']:
+                if key in obj and obj[key]:
+                    extracted['title'] = str(obj[key])
+                    extracted['clean_title'] = extracted['title'][:100]
+                    break
+        
+        # Price
+        if not extracted['price']:
+            for key in ['salePrice', 'price', 'retailPrice']:
+                if key in obj:
+                    price = obj[key]
+                    if isinstance(price, (int, float)) and 0 < price < 100000:
+                        extracted['price'] = str(price)
+                        break
+                    elif isinstance(price, str):
                         try:
-                            price_str = matches[0].replace(',', '')
-                            price_num = float(price_str)
+                            price_num = float(price.replace(',', ''))
                             if 0 < price_num < 100000:
                                 extracted['price'] = str(price_num)
                                 break
                         except:
-                            continue
-                
-                # Generate descriptions
-                if not extracted['description_raw']:
-                    parsed_url = urlparse(url)
-                    extracted['description_raw'] = f"منتج {extracted['title'] or 'مميز'} من {parsed_url.netloc}"
-                
-                extracted['description_clean'] = re.sub(r'<[^>]+>', '', extracted['description_raw']).strip()[:500]
-                
-                # Generate custom description
-                title = extracted['clean_title'] or extracted['title']
-                desc = f"اكتشف {title or 'هذا المنتج المميز'} الآن! "
-                if extracted['description_clean']:
-                    desc += extracted['description_clean'][:200] + " "
-                if extracted['price']:
-                    desc += f"بسعر مميز {extracted['price']}$ فقط. "
-                desc += "جودة عالية وتصميم أنيق. اطلبه الآن واستمتع بأفضل تجربة تسوق!"
-                extracted['my_custom_description'] = desc[:500]
-                
-                # Extract keywords
-                if title:
-                    words = [w for w in re.findall(r'\b\w{4,}\b', title.lower())]
-                    extracted['seo_keywords'] = list(set(words))[:10]
-                    extracted['tags'] = list(set(words))[:5]
-                    
-            except Exception as e:
-                logger.error(f"Error parsing HTML: {e}")
+                            pass
+        
+        # Images
+        for key in ['goodsImgs', 'productImages', 'images', 'gallery']:
+            if key in obj:
+                images = obj[key]
+                if isinstance(images, list):
+                    for img in images:
+                        if isinstance(img, str) and img.startswith('http') and img not in seen_urls:
+                            extracted['images'].append(img)
+                            seen_urls.add(img)
+                        elif isinstance(img, dict) and 'originImage' in img:
+                            img_url = img['originImage']
+                            if img_url not in seen_urls:
+                                extracted['images'].append(img_url)
+                                seen_urls.add(img_url)
+        
+        # Colors
+        for key in ['goodsColorList', 'variants', 'colors']:
+            if key in obj:
+                colors = obj[key]
+                if isinstance(colors, list):
+                    for color in colors:
+                        if isinstance(color, str) and color not in extracted['colors']:
+                            extracted['colors'].append(color)
+                        elif isinstance(color, dict):
+                            color_name = color.get('colorName') or color.get('name')
+                            if color_name and color_name not in extracted['colors']:
+                                extracted['colors'].append(color_name)
+        
+        # Sizes
+        for key in ['goodsSizeList', 'sizes', 'sizeList']:
+            if key in obj:
+                sizes = obj[key]
+                if isinstance(sizes, list):
+                    for size in sizes:
+                        if isinstance(size, str) and size not in extracted['sizes']:
+                            extracted['sizes'].append(size)
+                        elif isinstance(size, dict):
+                            size_name = size.get('sizeName') or size.get('name')
+                            if size_name and size_name not in extracted['sizes']:
+                                extracted['sizes'].append(size_name)
+        
+        # Description
+        if not extracted['description_raw']:
+            for key in ['goodsDesc', 'description', 'desc']:
+                if key in obj and obj[key]:
+                    extracted['description_raw'] = str(obj[key])
+                    break
+        
+        # Recursively search nested objects
+        for value in obj.values():
+            if isinstance(value, dict):
+                extract_from_json(value, extracted, seen_urls)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        extract_from_json(item, extracted, seen_urls)
+    except Exception as e:
+        logger.warning(f"Error in extract_from_json: {e}")
         
         return jsonify(extracted)
     except Exception as e:

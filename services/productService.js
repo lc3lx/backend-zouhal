@@ -298,6 +298,13 @@ function basicExtractProductData(html, url) {
   };
 
   try {
+    const isShein = url.includes("shein.com") || url.includes("shein.");
+    
+    if (isShein) {
+      // Special extraction for Shein
+      return extractSheinProductData(html, url);
+    }
+
     // Extract title
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
     if (titleMatch) {
@@ -394,6 +401,303 @@ function basicExtractProductData(html, url) {
   }
 
   return data;
+}
+
+// Special extraction for Shein products
+function extractSheinProductData(html, url) {
+  const data = {
+    source_url: url,
+    title: "",
+    clean_title: "",
+    images: [],
+    colors: [],
+    sizes: [],
+    price: "",
+    description_raw: "",
+    description_clean: "",
+    my_custom_description: "",
+    seo_keywords: [],
+    tags: [],
+  };
+
+  try {
+    // Extract JSON data from script tags (like Chrome extension does)
+    const scriptMatches = html.match(/<script[^>]*>([\s\S]*?)<\/script>/gi);
+    const seenUrls = new Set();
+    
+    if (scriptMatches) {
+      for (const scriptTag of scriptMatches) {
+        const scriptContent = scriptTag.replace(/<script[^>]*>|<\/script>/gi, "");
+        
+        // Look for product data in JSON
+        if (
+          scriptContent.includes("goodsDetail") ||
+          scriptContent.includes("productDetail") ||
+          scriptContent.includes("goodsInfo") ||
+          scriptContent.includes("productInfo") ||
+          scriptContent.includes("goods_id") ||
+          scriptContent.includes("product_id")
+        ) {
+          try {
+            // Try to extract JSON objects
+            const jsonMatches = scriptContent.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g);
+            if (jsonMatches) {
+              for (const jsonStr of jsonMatches) {
+                try {
+                  const jsonObj = JSON.parse(jsonStr);
+                  extractDataFromJson(jsonObj, data, seenUrls);
+                } catch (e) {
+                  // Try to find nested JSON
+                  const nestedMatches = jsonStr.match(/\{[^{}]*"goodsDetail"[^{}]*\{[^}]*\}[^}]*\}/g);
+                  if (nestedMatches) {
+                    for (const nested of nestedMatches) {
+                      try {
+                        const nestedObj = JSON.parse(nested);
+                        extractDataFromJson(nestedObj, data, seenUrls);
+                      } catch (e2) {
+                        // Continue
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            
+            // Also try to extract from window.__INITIAL_STATE__ or similar
+            const initialStateMatch = scriptContent.match(/window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\});/);
+            if (initialStateMatch) {
+              try {
+                const initialState = JSON.parse(initialStateMatch[1]);
+                extractDataFromJson(initialState, data, seenUrls);
+              } catch (e) {
+                // Continue
+              }
+            }
+            
+            // Try to extract from window.goodsDetailInfo
+            const goodsDetailMatch = scriptContent.match(/window\.goodsDetailInfo\s*=\s*(\{[\s\S]*?\});/);
+            if (goodsDetailMatch) {
+              try {
+                const goodsDetail = JSON.parse(goodsDetailMatch[1]);
+                extractDataFromJson(goodsDetail, data, seenUrls);
+              } catch (e) {
+                // Continue
+              }
+            }
+          } catch (e) {
+            // Continue searching
+          }
+        }
+      }
+    }
+
+    // Extract from HTML attributes and data attributes
+    // Look for product images in data attributes
+    const dataImageMatches = html.matchAll(/data-[^=]*image[^=]*=["']([^"']+)["']/gi);
+    for (const match of dataImageMatches) {
+      const imgUrl = match[1];
+      if (imgUrl && imgUrl.includes("shein") && !seenUrls.has(imgUrl)) {
+        if (imgUrl.startsWith("//")) {
+          data.images.push(`https:${imgUrl}`);
+          seenUrls.add(`https:${imgUrl}`);
+        } else if (imgUrl.startsWith("http")) {
+          data.images.push(imgUrl);
+          seenUrls.add(imgUrl);
+        }
+      }
+    }
+
+    // Extract images from img tags with specific Shein patterns
+    const imgMatches = html.matchAll(/<img[^>]+src=["']([^"']+)["']/gi);
+    for (const match of imgMatches) {
+      const imgUrl = match[1];
+      if (
+        imgUrl &&
+        (imgUrl.includes("shein") || imgUrl.includes("s7d9")) &&
+        !imgUrl.includes("logo") &&
+        !imgUrl.includes("icon") &&
+        !seenUrls.has(imgUrl)
+      ) {
+        if (imgUrl.startsWith("//")) {
+          const fullUrl = `https:${imgUrl}`;
+          data.images.push(fullUrl);
+          seenUrls.add(fullUrl);
+        } else if (imgUrl.startsWith("http")) {
+          data.images.push(imgUrl);
+          seenUrls.add(imgUrl);
+        }
+      }
+    }
+
+    // Extract price from various patterns
+    const pricePatterns = [
+      /"salePrice"\s*:\s*"?([\d.]+)/i,
+      /"price"\s*:\s*"?([\d.]+)/i,
+      /"retailPrice"\s*:\s*"?([\d.]+)/i,
+      /<span[^>]*class=["'][^"']*price[^"']*["'][^>]*>([^<]+)<\/span>/i,
+      /<div[^>]*class=["'][^"']*price[^"']*["'][^>]*>([^<]+)<\/div>/i,
+    ];
+
+    for (const pattern of pricePatterns) {
+      const matches = html.match(pattern);
+      if (matches) {
+        const priceStr = matches[1];
+        const priceNum = parseFloat(priceStr.replace(/,/g, ""));
+        if (priceNum && priceNum > 0 && priceNum < 100000) {
+          data.price = priceNum.toString();
+          break;
+        }
+      }
+    }
+
+    // Extract title from h1 or specific selectors
+    const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+    if (h1Match && h1Match[1].trim() && !h1Match[1].includes("شي إن")) {
+      data.title = h1Match[1].trim();
+      data.clean_title = data.title.substring(0, 100);
+    } else {
+      // Fallback to title tag
+      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      if (titleMatch) {
+        let title = titleMatch[1].trim();
+        // Remove Shein branding
+        title = title.replace(/\s*[-|]\s*شي إن.*$/i, "");
+        title = title.replace(/\s*[-|]\s*SHEIN.*$/i, "");
+        data.title = title;
+        data.clean_title = title.substring(0, 100);
+      }
+    }
+
+    // Remove duplicates from images
+    data.images = [...new Set(data.images)].slice(0, 20);
+
+    // Generate description if not found
+    if (!data.description_raw) {
+      data.description_raw = `منتج ${data.title || "مميز"} من Shein`;
+    }
+
+    data.description_clean = data.description_raw
+      .replace(/<[^>]+>/g, "")
+      .trim()
+      .substring(0, 500);
+
+    data.my_custom_description = generateCustomDescription(
+      data.title,
+      data.description_clean,
+      data.price
+    );
+
+    // Extract keywords
+    if (data.title) {
+      const words = data.title
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 3 && !w.includes("shein"));
+      data.seo_keywords = [...new Set(words)].slice(0, 10);
+      data.tags = [...new Set(words)].slice(0, 5);
+    }
+  } catch (error) {
+    console.error("Error extracting Shein product:", error);
+  }
+
+  return data;
+}
+
+// Recursive function to extract data from JSON objects
+function extractDataFromJson(obj, data, seenUrls) {
+  if (!obj || typeof obj !== "object") return;
+
+  try {
+    // Extract title
+    if (!data.title && (obj.goodsName || obj.productName || obj.title || obj.name)) {
+      data.title = obj.goodsName || obj.productName || obj.title || obj.name;
+      data.clean_title = data.title.substring(0, 100);
+    }
+
+    // Extract price
+    if (!data.price && (obj.salePrice || obj.price || obj.retailPrice)) {
+      const price = obj.salePrice || obj.price || obj.retailPrice;
+      if (typeof price === "number" && price > 0) {
+        data.price = price.toString();
+      } else if (typeof price === "string") {
+        const priceNum = parseFloat(price.replace(/,/g, ""));
+        if (priceNum > 0) {
+          data.price = priceNum.toString();
+        }
+      }
+    }
+
+    // Extract images
+    if (obj.goodsImgs || obj.productImages || obj.images || obj.gallery) {
+      const images = obj.goodsImgs || obj.productImages || obj.images || obj.gallery;
+      if (Array.isArray(images)) {
+        images.forEach((img) => {
+          if (typeof img === "string" && img.startsWith("http") && !seenUrls.has(img)) {
+            data.images.push(img);
+            seenUrls.add(img);
+          } else if (typeof img === "object" && img.originImage) {
+            const imgUrl = img.originImage;
+            if (!seenUrls.has(imgUrl)) {
+              data.images.push(imgUrl);
+              seenUrls.add(imgUrl);
+            }
+          }
+        });
+      }
+    }
+
+    // Extract colors/variants
+    if (obj.goodsColorList || obj.variants || obj.colors) {
+      const colors = obj.goodsColorList || obj.variants || obj.colors;
+      if (Array.isArray(colors)) {
+        colors.forEach((color) => {
+          if (typeof color === "string") {
+            if (!data.colors.includes(color)) {
+              data.colors.push(color);
+            }
+          } else if (color.colorName || color.name) {
+            const colorName = color.colorName || color.name;
+            if (!data.colors.includes(colorName)) {
+              data.colors.push(colorName);
+            }
+          }
+        });
+      }
+    }
+
+    // Extract sizes
+    if (obj.goodsSizeList || obj.sizes || obj.sizeList) {
+      const sizes = obj.goodsSizeList || obj.sizes || obj.sizeList;
+      if (Array.isArray(sizes)) {
+        sizes.forEach((size) => {
+          if (typeof size === "string") {
+            if (!data.sizes.includes(size)) {
+              data.sizes.push(size);
+            }
+          } else if (size.sizeName || size.name) {
+            const sizeName = size.sizeName || size.name;
+            if (!data.sizes.includes(sizeName)) {
+              data.sizes.push(sizeName);
+            }
+          }
+        });
+      }
+    }
+
+    // Extract description
+    if (!data.description_raw && (obj.goodsDesc || obj.description || obj.desc)) {
+      data.description_raw = obj.goodsDesc || obj.description || obj.desc;
+    }
+
+    // Recursively search nested objects
+    for (const key in obj) {
+      if (obj[key] && typeof obj[key] === "object") {
+        extractDataFromJson(obj[key], data, seenUrls);
+      }
+    }
+  } catch (error) {
+    // Continue silently
+  }
 }
 
 // Generate custom Arabic description
