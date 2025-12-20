@@ -7,6 +7,7 @@ const ApiError = require("../utils/apiError");
 const { uploadAny } = require("../middlewares/uploadImageMiddleware");
 const factory = require("./handlersFactory");
 const Product = require("../models/productModel");
+const { fetchAndImportProducts, fetchAndImportMultiplePages } = require("./apifyImportService");
 
 // Lazy load Puppeteer (only when needed)
 let puppeteer = null;
@@ -1027,3 +1028,90 @@ function generateCustomDescription(title, rawDesc, price) {
 
   return desc.substring(0, 500);
 }
+
+// @desc    Import products from Apify AliExpress API
+// @route   POST /api/v1/products/import/apify
+// @access  Private
+exports.importProductsFromApify = asyncHandler(async (req, res, next) => {
+  const {
+    searchKeyword = 'phone',
+    page = 1,
+    maxProducts = 50,
+    categoryId = null,
+    brandId = null,
+    storeId = null,
+    categoryName = null,
+    brandName = null,
+    storeName = null,
+  } = req.body;
+
+  try {
+    const results = await fetchAndImportProducts({
+      searchKeyword,
+      page,
+      maxProducts,
+      defaultCategoryId: categoryId,
+      defaultBrandId: brandId,
+      defaultStoreId: storeId,
+      categoryName,
+      brandName,
+      storeName,
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: `Successfully imported ${results.imported} out of ${results.total} products`,
+      data: results,
+    });
+  } catch (error) {
+    console.error('Error importing products from Apify:', error);
+    return next(new ApiError(`Failed to import products: ${error.message}`, 500));
+  }
+});
+
+// @desc    Bulk import products from Apify AliExpress API
+// @route   POST /api/v1/products/import/apify/bulk
+// @access  Private
+exports.bulkImportProductsFromApify = asyncHandler(async (req, res, next) => {
+  const {
+    searchKeyword = 'phone',
+    totalProducts = 1000,
+    productsPerPage = 50,
+    categoryId = null,
+    brandId = null,
+    storeId = null,
+    categoryName = null,
+    brandName = null,
+    storeName = null,
+  } = req.body;
+
+  try {
+    // Return immediately and process in background
+    res.status(202).json({
+      status: 'accepted',
+      message: 'Bulk import started. This may take several minutes.',
+    });
+
+    // Process in background (don't await)
+    fetchAndImportMultiplePages({
+      searchKeyword,
+      totalProducts,
+      productsPerPage,
+      defaultCategoryId: categoryId,
+      defaultBrandId: brandId,
+      defaultStoreId: storeId,
+      categoryName,
+      brandName,
+      storeName,
+    })
+      .then((results) => {
+        console.log('Bulk import completed:', results);
+      })
+      .catch((error) => {
+        console.error('Bulk import error:', error);
+      });
+  } catch (error) {
+    console.error('Error starting bulk import:', error);
+    return next(new ApiError(`Failed to start bulk import: ${error.message}`, 500));
+  }
+});

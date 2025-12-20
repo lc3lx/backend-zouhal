@@ -64,4 +64,24 @@ router.post(
   extractProductFromUrl
 );
 
+// Import products from Apify
+const {
+  importProductsFromApify,
+  bulkImportProductsFromApify,
+} = require("../services/productService");
+
+router.post(
+  "/import/apify",
+  authService.protect,
+  authService.allowedTo("admin", "manager"),
+  importProductsFromApify
+);
+
+router.post(
+  "/import/apify/bulk",
+  authService.protect,
+  authService.allowedTo("admin", "manager"),
+  bulkImportProductsFromApify
+);
+
 module.exports = router;
