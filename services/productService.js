@@ -1043,6 +1043,16 @@ exports.importProductsFromApify = asyncHandler(async (req, res, next) => {
     categoryName = null,
     brandName = null,
     storeName = null,
+    // Apify API parameters
+    apiTimeout = 300,
+    apiMemory = 1024,
+    apiMaxItems = null,
+    apiMaxTotalChargeUsd = null,
+    apiFormat = 'json',
+    apiClean = true,
+    apiLimit = null,
+    apiSkipHidden = true,
+    apiSkipEmpty = true,
   } = req.body;
 
   try {
@@ -1056,6 +1066,17 @@ exports.importProductsFromApify = asyncHandler(async (req, res, next) => {
       categoryName,
       brandName,
       storeName,
+      apiParams: {
+        timeout: apiTimeout,
+        memory: apiMemory,
+        maxItems: apiMaxItems,
+        maxTotalChargeUsd: apiMaxTotalChargeUsd,
+        format: apiFormat,
+        clean: apiClean,
+        limit: apiLimit,
+        skipHidden: apiSkipHidden,
+        skipEmpty: apiSkipEmpty,
+      },
     });
 
     res.status(200).json({
@@ -1083,6 +1104,16 @@ exports.bulkImportProductsFromApify = asyncHandler(async (req, res, next) => {
     categoryName = null,
     brandName = null,
     storeName = null,
+    // Apify API parameters
+    apiTimeout = 300,
+    apiMemory = 1024,
+    apiMaxItems = null,
+    apiMaxTotalChargeUsd = null,
+    apiFormat = 'json',
+    apiClean = true,
+    apiLimit = null,
+    apiSkipHidden = true,
+    apiSkipEmpty = true,
   } = req.body;
 
   try {
@@ -1103,6 +1134,17 @@ exports.bulkImportProductsFromApify = asyncHandler(async (req, res, next) => {
       categoryName,
       brandName,
       storeName,
+      apiParams: {
+        timeout: apiTimeout,
+        memory: apiMemory,
+        maxItems: apiMaxItems,
+        maxTotalChargeUsd: apiMaxTotalChargeUsd,
+        format: apiFormat,
+        clean: apiClean,
+        limit: apiLimit,
+        skipHidden: apiSkipHidden,
+        skipEmpty: apiSkipEmpty,
+      },
     })
       .then((results) => {
         console.log('Bulk import completed:', results);

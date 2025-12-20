@@ -4,24 +4,87 @@ const ApiError = require('../utils/apiError');
 
 const APIFY_ACTOR_ID = 'pintostudio~aliexpress-product-search';
 const APIFY_TOKEN = 'apify_api_M6xcavjprJvkLpbogfKicBOo7gVffU477FAE';
-const APIFY_API_URL = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/run-sync-get-dataset-items?token=${APIFY_TOKEN}`;
+
+// Base URL للـ API
+const APIFY_BASE_URL = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/run-sync-get-dataset-items`;
+
+// إنشاء URL كامل مع الـ token والمعاملات الإضافية
+function buildApifyUrl(params = {}) {
+  const url = new URL(APIFY_BASE_URL);
+  url.searchParams.set('token', APIFY_TOKEN);
+
+  // إضافة معاملات التحكم في التشغيل
+  if (params.timeout) url.searchParams.set('timeout', params.timeout);
+  if (params.memory) url.searchParams.set('memory', params.memory);
+  if (params.maxItems) url.searchParams.set('maxItems', params.maxItems);
+  if (params.maxTotalChargeUsd) url.searchParams.set('maxTotalChargeUsd', params.maxTotalChargeUsd);
+  if (params.restartOnError !== undefined) url.searchParams.set('restartOnError', params.restartOnError);
+  if (params.build) url.searchParams.set('build', params.build);
+
+  // إضافة معاملات تنسيق البيانات
+  if (params.format) url.searchParams.set('format', params.format);
+  if (params.clean !== undefined) url.searchParams.set('clean', params.clean);
+  if (params.offset !== undefined) url.searchParams.set('offset', params.offset);
+  if (params.limit !== undefined) url.searchParams.set('limit', params.limit);
+  if (params.fields) url.searchParams.set('fields', params.fields);
+  if (params.omit) url.searchParams.set('omit', params.omit);
+  if (params.unwind) url.searchParams.set('unwind', params.unwind);
+  if (params.flatten) url.searchParams.set('flatten', params.flatten);
+  if (params.desc !== undefined) url.searchParams.set('desc', params.desc);
+  if (params.attachment !== undefined) url.searchParams.set('attachment', params.attachment);
+  if (params.delimiter) url.searchParams.set('delimiter', params.delimiter);
+  if (params.bom !== undefined) url.searchParams.set('bom', params.bom);
+  if (params.xmlRoot) url.searchParams.set('xmlRoot', params.xmlRoot);
+  if (params.xmlRow) url.searchParams.set('xmlRow', params.xmlRow);
+  if (params.skipHeaderRow !== undefined) url.searchParams.set('skipHeaderRow', params.skipHeaderRow);
+  if (params.skipHidden !== undefined) url.searchParams.set('skipHidden', params.skipHidden);
+  if (params.skipEmpty !== undefined) url.searchParams.set('skipEmpty', params.skipEmpty);
+  if (params.simplified !== undefined) url.searchParams.set('simplified', params.simplified);
+  if (params.skipFailedPages !== undefined) url.searchParams.set('skipFailedPages', params.skipFailedPages);
+
+  return url.toString();
+}
 
 /**
  * Fetch products from Apify AliExpress API
- * @param {Object} options - Search options
+ * @param {Object} options - Search and API options
  * @param {string} options.searchKeyword - Search keyword
  * @param {number} options.page - Page number (default: 1)
  * @param {number} options.maxProducts - Maximum products to fetch (default: 50)
+ * @param {Object} options.apiParams - Additional API parameters (timeout, memory, format, etc.)
  * @returns {Promise<Array>} Array of products
  */
 async function fetchProductsFromApify(options = {}) {
-  const { searchKeyword = 'phone', page = 1, maxProducts = 50 } = options;
+  const {
+    searchKeyword = 'phone',
+    page = 1,
+    maxProducts = 50,
+    apiParams = {}
+  } = options;
 
   try {
     console.log(`Fetching products from Apify: keyword="${searchKeyword}", page=${page}`);
 
+    // بناء URL مع المعاملات الإضافية
+    const apiUrl = buildApifyUrl({
+      // معاملات تحكم التشغيل
+      timeout: apiParams.timeout || 300, // 5 minutes default
+      memory: apiParams.memory || 1024, // 1GB default
+      maxItems: apiParams.maxItems,
+      maxTotalChargeUsd: apiParams.maxTotalChargeUsd,
+      restartOnError: apiParams.restartOnError,
+
+      // معاملات تنسيق البيانات
+      format: apiParams.format || 'json',
+      clean: apiParams.clean !== undefined ? apiParams.clean : true,
+      limit: apiParams.limit || maxProducts,
+      fields: apiParams.fields,
+      skipHidden: apiParams.skipHidden !== undefined ? apiParams.skipHidden : true,
+      skipEmpty: apiParams.skipEmpty !== undefined ? apiParams.skipEmpty : true,
+    });
+
     const response = await axios.post(
-      APIFY_API_URL,
+      apiUrl,
       {
         searchKeyword,
         page,
@@ -31,7 +94,7 @@ async function fetchProductsFromApify(options = {}) {
         headers: {
           'Content-Type': 'application/json',
         },
-        timeout: 300000, // 5 minutes timeout for sync API
+        timeout: (apiParams.timeout || 300) * 1000, // تحويل إلى مللي ثانية
       }
     );
 
@@ -70,6 +133,7 @@ async function fetchProductsFromApify(options = {}) {
  * @param {string} options.searchKeyword - Search keyword
  * @param {number} options.totalProducts - Total number of products to fetch
  * @param {number} options.productsPerPage - Products per page (default: 50)
+ * @param {Object} options.apiParams - Additional API parameters
  * @returns {Promise<Array>} Array of all products
  */
 async function fetchMultiplePages(options = {}) {
@@ -77,6 +141,7 @@ async function fetchMultiplePages(options = {}) {
     searchKeyword = 'phone',
     totalProducts = 1000,
     productsPerPage = 50,
+    apiParams = {},
   } = options;
 
   const totalPages = Math.ceil(totalProducts / productsPerPage);
@@ -92,6 +157,7 @@ async function fetchMultiplePages(options = {}) {
         searchKeyword,
         page,
         maxProducts: productsPerPage,
+        apiParams,
       });
 
       if (products.length === 0) {
@@ -129,5 +195,6 @@ async function fetchMultiplePages(options = {}) {
 module.exports = {
   fetchProductsFromApify,
   fetchMultiplePages,
+  buildApifyUrl,
 };
 
