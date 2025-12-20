@@ -86,9 +86,12 @@ async function fetchProductsFromApify(options = {}) {
     const response = await axios.post(
       apiUrl,
       {
-        searchKeyword,
-        page,
-        maxProducts,
+        input: {
+          query: searchKeyword,
+          page: page,
+          maxItems: maxProducts,
+          // Additional input parameters that might be needed
+        }
       },
       {
         headers: {
