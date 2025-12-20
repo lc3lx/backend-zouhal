@@ -36,11 +36,20 @@ async function fetchProductsFromApify(options = {}) {
     );
 
     if (!Array.isArray(response.data)) {
-      throw new Error('Invalid response format from Apify API');
+      console.error('Invalid response format from Apify API:', typeof response.data);
+      console.error('Response data sample:', JSON.stringify(response.data, null, 2).substring(0, 1000));
+      throw new Error('Invalid response format from Apify API - expected array');
     }
 
-    console.log(`Successfully fetched ${response.data.length} products from Apify`);
-    return response.data;
+    // Filter out null/undefined products
+    const validProducts = response.data.filter(product => product && typeof product === 'object');
+    
+    if (validProducts.length !== response.data.length) {
+      console.warn(`Filtered out ${response.data.length - validProducts.length} invalid products`);
+    }
+
+    console.log(`Successfully fetched ${validProducts.length} products from Apify`);
+    return validProducts;
   } catch (error) {
     console.error('Error fetching products from Apify:', error.message);
     if (error.response) {

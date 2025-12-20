@@ -81,8 +81,10 @@ function mapApifyProductToProduct(apifyProduct, options = {}) {
   const colors = [];
   if (apifyProduct.variants && Array.isArray(apifyProduct.variants)) {
     apifyProduct.variants.forEach(variant => {
-      if (variant.color) {
-        const colorName = typeof variant.color === 'string' ? variant.color : variant.color.name || variant.color.value;
+      if (variant && variant.color) {
+        const colorName = typeof variant.color === 'string' 
+          ? variant.color 
+          : (variant.color && (variant.color.name || variant.color.value)) || null;
         if (colorName && !colors.includes(colorName)) {
           colors.push(colorName);
         }
@@ -90,9 +92,13 @@ function mapApifyProductToProduct(apifyProduct, options = {}) {
     });
   } else if (apifyProduct.colors && Array.isArray(apifyProduct.colors)) {
     apifyProduct.colors.forEach(color => {
-      const colorName = typeof color === 'string' ? color : color.name || color.value;
-      if (colorName && !colors.includes(colorName)) {
-        colors.push(colorName);
+      if (color) {
+        const colorName = typeof color === 'string' 
+          ? color 
+          : (color && (color.name || color.value)) || null;
+        if (colorName && !colors.includes(colorName)) {
+          colors.push(colorName);
+        }
       }
     });
   }
@@ -101,22 +107,30 @@ function mapApifyProductToProduct(apifyProduct, options = {}) {
   const sizes = [];
   if (apifyProduct.sizes && Array.isArray(apifyProduct.sizes)) {
     apifyProduct.sizes.forEach(size => {
-      const sizeLabel = typeof size === 'string' ? size : size.label || size.name || size.value;
-      if (sizeLabel) {
-        sizes.push({
-          label: sizeLabel,
-          stock: typeof size === 'object' && size.stock ? size.stock : 99,
-        });
+      if (size) {
+        const sizeLabel = typeof size === 'string' 
+          ? size 
+          : (size && (size.label || size.name || size.value)) || null;
+        if (sizeLabel) {
+          sizes.push({
+            label: sizeLabel,
+            stock: typeof size === 'object' && size && size.stock ? size.stock : 99,
+          });
+        }
       }
     });
   } else if (apifyProduct.sizeList && Array.isArray(apifyProduct.sizeList)) {
     apifyProduct.sizeList.forEach(size => {
-      const sizeLabel = typeof size === 'string' ? size : size.label || size.name || size.value;
-      if (sizeLabel) {
-        sizes.push({
-          label: sizeLabel,
-          stock: 99,
-        });
+      if (size) {
+        const sizeLabel = typeof size === 'string' 
+          ? size 
+          : (size && (size.label || size.name || size.value)) || null;
+        if (sizeLabel) {
+          sizes.push({
+            label: sizeLabel,
+            stock: 99,
+          });
+        }
       }
     });
   }
@@ -173,21 +187,30 @@ function mapApifyProductToProduct(apifyProduct, options = {}) {
   // Add variants if we have color-specific images
   if (apifyProduct.variants && Array.isArray(apifyProduct.variants) && apifyProduct.variants.length > 0) {
     productDoc.variants = apifyProduct.variants
-      .filter(v => v.color && (v.image || v.images))
+      .filter(v => v && v.color && (v.image || v.images))
       .slice(0, 10)
-      .map(variant => ({
-        color: {
-          name: typeof variant.color === 'string' ? variant.color : variant.color.name || 'Default',
-          hex: typeof variant.color === 'object' && variant.color.hex ? variant.color.hex : null,
-        },
-        images: Array.isArray(variant.images) 
-          ? variant.images.slice(0, 5)
-          : variant.image 
-            ? [variant.image] 
-            : [],
-        sizes: sizes.length > 0 ? sizes : [],
-        price: variant.price || price,
-      }));
+      .map(variant => {
+        const colorName = typeof variant.color === 'string' 
+          ? variant.color 
+          : (variant.color && variant.color.name) || 'Default';
+        const colorHex = typeof variant.color === 'object' && variant.color && variant.color.hex 
+          ? variant.color.hex 
+          : null;
+        
+        return {
+          color: {
+            name: colorName,
+            hex: colorHex,
+          },
+          images: Array.isArray(variant.images) 
+            ? variant.images.slice(0, 5)
+            : variant.image 
+              ? [variant.image] 
+              : [],
+          sizes: sizes.length > 0 ? sizes : [],
+          price: variant.price || price,
+        };
+      });
   }
 
   return productDoc;

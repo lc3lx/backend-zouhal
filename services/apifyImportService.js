@@ -41,10 +41,27 @@ async function getOrCreateCategory(categoryName, defaultCategoryId = null) {
 
   if (!category) {
     // Create new category
-    category = await Category.create({
-      name: normalizedName,
-      slug: slugify(normalizedName, { lower: true, strict: true }),
-    });
+    try {
+      category = await Category.create({
+        name: normalizedName,
+        slug: slugify(normalizedName, { lower: true, strict: true }),
+      });
+    } catch (createError) {
+      // If creation fails (e.g., duplicate), try to find again
+      category = await Category.findOne({ 
+        $or: [
+          { name: new RegExp(`^${normalizedName}$`, 'i') },
+          { slug: slugify(normalizedName, { lower: true, strict: true }) }
+        ]
+      });
+      if (!category) {
+        throw new Error(`Failed to create or find category: ${normalizedName}`);
+      }
+    }
+  }
+
+  if (!category || !category._id) {
+    throw new Error(`Category is null after create/find: ${normalizedName}`);
   }
 
   categoryCache.set(normalizedName, category._id);
@@ -78,10 +95,27 @@ async function getOrCreateBrand(brandName, defaultBrandId = null) {
 
   if (!brand) {
     // Create new brand
-    brand = await Brand.create({
-      name: normalizedName,
-      slug: slugify(normalizedName, { lower: true, strict: true }),
-    });
+    try {
+      brand = await Brand.create({
+        name: normalizedName,
+        slug: slugify(normalizedName, { lower: true, strict: true }),
+      });
+    } catch (createError) {
+      // If creation fails (e.g., duplicate), try to find again
+      brand = await Brand.findOne({ 
+        $or: [
+          { name: new RegExp(`^${normalizedName}$`, 'i') },
+          { slug: slugify(normalizedName, { lower: true, strict: true }) }
+        ]
+      });
+      if (!brand) {
+        throw new Error(`Failed to create or find brand: ${normalizedName}`);
+      }
+    }
+  }
+
+  if (!brand || !brand._id) {
+    throw new Error(`Brand is null after create/find: ${normalizedName}`);
   }
 
   brandCache.set(normalizedName, brand._id);
@@ -115,10 +149,27 @@ async function getOrCreateStore(storeName, defaultStoreId = null) {
 
   if (!store) {
     // Create new store
-    store = await Store.create({
-      name: normalizedName,
-      slug: slugify(normalizedName, { lower: true, strict: true }),
-    });
+    try {
+      store = await Store.create({
+        name: normalizedName,
+        slug: slugify(normalizedName, { lower: true, strict: true }),
+      });
+    } catch (createError) {
+      // If creation fails (e.g., duplicate), try to find again
+      store = await Store.findOne({ 
+        $or: [
+          { name: new RegExp(`^${normalizedName}$`, 'i') },
+          { slug: slugify(normalizedName, { lower: true, strict: true }) }
+        ]
+      });
+      if (!store) {
+        throw new Error(`Failed to create or find store: ${normalizedName}`);
+      }
+    }
+  }
+
+  if (!store || !store._id) {
+    throw new Error(`Store is null after create/find: ${normalizedName}`);
   }
 
   storeCache.set(normalizedName, store._id);
@@ -140,10 +191,15 @@ async function importProduct(apifyProduct, options = {}) {
   } = options;
 
   try {
+    // Validate apifyProduct
+    if (!apifyProduct || typeof apifyProduct !== 'object') {
+      throw new Error('Invalid product data: apifyProduct is null or not an object');
+    }
+
     // Get or create category, brand, store
     const categoryId = await getOrCreateCategory(categoryName || 'General', defaultCategoryId);
     const brandId = apifyProduct.brand 
-      ? await getOrCreateBrand(apifyProduct.brand, defaultBrandId)
+      ? await getOrCreateBrand(String(apifyProduct.brand), defaultBrandId)
       : defaultBrandId;
     const storeId = await getOrCreateStore(storeName || 'AliExpress', defaultStoreId);
 
@@ -155,8 +211,21 @@ async function importProduct(apifyProduct, options = {}) {
     });
 
     // Validate required fields
-    if (!productDoc.title || !productDoc.description || !productDoc.price) {
-      throw new Error('Missing required fields: title, description, or price');
+    if (!productDoc.title || productDoc.title.trim() === '') {
+      throw new Error('Missing required field: title');
+    }
+    if (!productDoc.description || productDoc.description.trim() === '') {
+      throw new Error('Missing required field: description');
+    }
+    if (!productDoc.price || productDoc.price <= 0) {
+      throw new Error('Missing or invalid required field: price');
+    }
+    if (!productDoc.category || !mongoose.Types.ObjectId.isValid(productDoc.category)) {
+      throw new Error('Missing or invalid required field: category');
+    }
+    if (!productDoc.imageCover || productDoc.imageCover.trim() === '') {
+      // Set a default placeholder image if missing
+      productDoc.imageCover = 'https://via.placeholder.com/500?text=No+Image';
     }
 
     if (upsert) {
@@ -177,10 +246,12 @@ async function importProduct(apifyProduct, options = {}) {
 
     return { success: true, product: productDoc };
   } catch (error) {
+    console.error('Error importing product:', error.message);
+    console.error('Product data:', JSON.stringify(apifyProduct, null, 2).substring(0, 500));
     return { 
       success: false, 
-      error: error.message,
-      product: apifyProduct.title || 'Unknown',
+      error: error.message || 'Unknown error',
+      product: apifyProduct?.title || apifyProduct?.productName || apifyProduct?.name || 'Unknown',
     };
   }
 }
